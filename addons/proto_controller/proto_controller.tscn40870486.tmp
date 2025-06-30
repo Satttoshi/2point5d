@@ -19,8 +19,8 @@ can_sprint = true
 can_freefly = true
 input_left = "move_left"
 input_right = "move_right"
-input_up = "move_up"
-input_down = "move_down"
+input_forward = "move_up"
+input_back = "move_down"
 input_jump = "jump"
 
 [node name="Mesh" type="MeshInstance3D" parent="."]
