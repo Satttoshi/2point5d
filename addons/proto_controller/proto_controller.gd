@@ -1,8 +1,3 @@
-# ProtoController v1.0 by Brackeys
-# CC0 License
-# Intended for rapid prototyping of first-person games.
-# Happy prototyping!
-
 extends CharacterBody3D
 
 ## Can we move around?
@@ -30,6 +25,16 @@ extends CharacterBody3D
 ## How fast do we freefly?
 @export var freefly_speed : float = 25.0
 
+@export_group("Camera Follow")
+## How fast the camera follows the player.
+@export var camera_follow_speed : float = 12.0
+## Minimum distance before camera starts following.
+@export var camera_deadzone : float = 0.5
+## Camera offset from player position.
+@export var camera_offset : Vector3 = Vector3(0, 2, 5)
+## Enable smooth camera following.
+@export var smooth_camera : bool = true
+
 @export_group("Input Actions")
 ## Name of Input Action to move Left.
 @export var input_left : String = "ui_left"
@@ -48,6 +53,7 @@ extends CharacterBody3D
 
 var move_speed : float = 0.0
 var freeflying : bool = false
+var camera_target_position : Vector3
 
 ## IMPORTANT REFERENCES
 @onready var head: Node3D = $Head
@@ -55,8 +61,10 @@ var freeflying : bool = false
 
 func _ready() -> void:
 	check_input_mappings()
+	# Initialize camera target position
+	camera_target_position = global_position + camera_offset
 	# Setup third-person camera position
-	head.position = Vector3(0, 2, 5)
+	head.position = camera_offset
 	head.rotation = Vector3(deg_to_rad(-15), 0, 0)
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -110,8 +118,30 @@ func _physics_process(delta: float) -> void:
 	
 	# Use velocity to actually move
 	move_and_slide()
+	
+	# Update camera follow (skip in freefly mode)
+	if smooth_camera and not freeflying:
+		update_camera_follow(delta)
 
 
+
+func update_camera_follow(delta: float):
+	# Calculate desired camera position
+	var desired_position = global_position + camera_offset
+	
+	# Calculate distance from current camera target to desired position
+	var distance = camera_target_position.distance_to(desired_position)
+	
+	# Only move camera if outside deadzone
+	if distance > camera_deadzone:
+		# Smooth interpolation with slight delay
+		var follow_factor = camera_follow_speed * delta
+		# Use smoothstep for more natural bezier-like curve
+		follow_factor = smoothstep(0.0, 1.0, follow_factor)
+		camera_target_position = camera_target_position.lerp(desired_position, follow_factor)
+	
+	# Apply the smooth position to the camera head
+	head.global_position = camera_target_position
 
 func enable_freefly():
 	collider.disabled = true
