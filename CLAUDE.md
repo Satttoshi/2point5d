@@ -37,21 +37,121 @@ This is a 2.5D Godot project using Godot 4.4 engine. The project is configured a
 
 ## Architecture Notes
 
-This is a minimal starter project with:
-- Single 3D scene containing a box mesh
-- No scripting layer implemented yet
-- No camera configured
-- No input handling or game logic
+This is a 2.5D platformer project with the following implemented systems:
 
-For 2.5D development, typical patterns include:
-- Fixed or orthographic camera setup
-- Constrained movement axes
-- Sprite-based characters in 3D space
-- Limited rotation/movement planes
+### Core Architecture
+- **Main Scene**: `main.tscn` - Primary game scene with environment, lighting, and player
+- **ProtoController**: Custom character controller addon for 2.5D movement
+- **Tilemap System**: GridMap-based level construction using Kenney's Platformer Kit
+- **Physics**: Jolt Physics engine for 3D physics simulation
+
+### Current Features
+- **Player Movement**: 
+  - 2D constraint movement (X-axis only, no Z-axis movement)
+  - Gravity-based physics with jump mechanics
+  - Sprint functionality
+  - Freefly mode for debugging (noclip-style movement)
+- **Camera System**: 
+  - Third-person camera with smooth following
+  - Bezier curve-based easing for natural movement
+  - Configurable deadzone and follow speed
+  - Acceleration/deceleration curves
+- **Input System**: 
+  - Custom input actions (WASD movement, Space jump, Shift sprint, N freefly)
+  - Proper input validation and error handling
+
+### Scene Structure
+- **main.tscn**: Main game scene
+  - ProtoController instance (player character)
+  - WorldEnvironment with procedural sky
+  - DirectionalLight3D with shadows
+- **scenes/tiles.tscn**: MeshLibrary resource scene for tile generation
+- **addons/proto_controller/**: Custom character controller addon
+  - `proto_controller.gd` - Main controller script
+  - `proto_controller.tscn` - Character controller scene
+
+### Technical Implementation
+- **Movement System**: CharacterBody3D-based with move_and_slide()
+- **Camera Follow**: Custom bezier easing with configurable parameters
+- **Physics**: Gravity multiplier for responsive jump feel
+- **Input Handling**: Action-based input system with deadzone configuration
+- **2.5D Constraint**: Movement locked to X-axis, camera positioned for side-scrolling view
 
 ## Development Setup
 
 The project uses Godot 4.4 with Forward Plus rendering. No external dependencies or build systems are configured. All development happens within the Godot editor environment.
+
+## Development Workflow
+
+### Code Documentation Standards
+**CRITICAL**: All code MUST be thoroughly documented with the following requirements:
+
+#### Function Documentation
+- **Every function** must have JSDoc-style comments explaining:
+  - Purpose and behavior
+  - Side effects or state changes
+
+Example:
+```gdscript
+## Calculates the bezier curve easing for smooth camera movement
+func bezier_ease(t: float, strength: float, accel_curve: float, decel_curve: float) -> float:
+```
+
+#### Complex Logic Documentation
+- **Any complex logic** (loops, conditionals, algorithms) must have inline comments explaining:
+  - What the logic does
+  - Why it's implemented this way
+  - Any non-obvious behavior or edge cases
+
+Example:
+```gdscript
+# Calculate distance factor to create deadzone behavior
+# This prevents camera jitter when player is barely moving
+var distance_factor = distance / (distance + camera_deadzone)
+
+# Apply bezier curve smoothing using custom easing
+# This creates natural acceleration/deceleration patterns
+var speed_factor = camera_follow_speed * delta
+var t = clamp(speed_factor, 0.0, 1.0)
+var bezier_factor = bezier_ease(t, camera_easing_strength, camera_acceleration_curve, camera_deceleration_curve)
+```
+
+#### Variable Documentation
+- **Exported variables** must have descriptive comments
+- **Complex or non-obvious variables** should be documented
+- **State variables** should explain their purpose and lifecycle
+
+#### Class/Script Documentation
+- **Every script** must have a header comment explaining:
+  - Purpose of the class/script
+  - Main responsibilities
+  - Key dependencies or relationships
+  - Usage context
+
+### Code Quality Standards
+1. **Consistent Naming**: Use clear, descriptive names for variables, functions, and classes
+2. **Type Hints**: Always use type hints for function parameters and return values
+3. **Error Handling**: Implement proper error checking and user feedback
+4. **Code Structure**: Organize code logically with clear separation of concerns
+5. **Performance**: Consider performance implications, especially for _process() and _physics_process() methods
+
+### Git Workflow
+1. **Commit Messages**: Use clear, descriptive commit messages
+2. **Small Commits**: Make focused commits with single responsibility
+3. **Branch Strategy**: Use feature branches for new development
+4. **Code Review**: All code should be reviewed before merging
+
+### Testing Guidelines
+1. **Manual Testing**: Test all features thoroughly in the Godot editor
+2. **Edge Cases**: Test boundary conditions and error scenarios
+3. **Performance Testing**: Verify smooth performance at target framerate
+4. **Input Testing**: Verify all input combinations work correctly
+
+### Documentation Maintenance
+- Update documentation when changing functionality
+- Keep CLAUDE.md current with architectural changes
+- Document any breaking changes or migration steps
+- Maintain clear README files for complex systems
 
 ## Godot MCP Integration
 
