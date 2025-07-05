@@ -11,22 +11,21 @@ This is a 2.5D Godot project using Godot 4.4 engine. The project is configured a
 ### Running the Project
 ```bash
 # Run in Godot editor (WSL - using Windows Godot executable)
-"/mnt/c/Users/yoshi/Desktop/Godot/Godot_v4.4.1-stable_win64.exe" --editor project.godot
+"/mnt/c/Program Files/Godot/Godot_v4.4.1-stable_win64.exe" --editor project.godot
 
 # Run project directly
-"/mnt/c/Users/yoshi/Desktop/Godot/Godot_v4.4.1-stable_win64.exe" project.godot
+"/mnt/c/Program Files/Godot/Godot_v4.4.1-stable_win64.exe" project.godot
 
 # Alternative console version
-"/mnt/c/Users/yoshi/Desktop/Godot/Godot_v4.4.1-stable_console_win64.exe" project.godot
+"/mnt/c/Program Files/Godot/Godot_v4.4.1-stable_console_win64.exe" project.godot
 ```
-
 ### Export Commands
 ```bash
 # Export for Linux
-"/mnt/c/Users/yoshi/Desktop/Godot/Godot_v4.4.1-stable_win64.exe" --export "Linux/X11" build/game
+"/mnt/c/Program Files/Godot/Godot_v4.4.1-stable_win64.exe" --export "Linux/X11" build/game
 
 # Export for Windows
-"/mnt/c/Users/yoshi/Desktop/Godot/Godot_v4.4.1-stable_win64.exe" --export "Windows Desktop" build/game.exe
+"/mnt/c/Program Files/Godot/Godot_v4.4.1-stable_win64.exe" --export "Windows Desktop" build/game.exe
 ```
 
 ## Project Structure

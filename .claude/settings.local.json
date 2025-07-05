@@ -14,7 +14,6 @@
       "Bash(mv:*)",
       "Bash(/mcp)",
       "mcp__godot__launch_editor",
-      "Bash(\"/mnt/c/Users/yoshi/Desktop/Godot/Godot_v4.4.1-stable_win64.exe\" --editor project.godot)",
       "Bash(git rm:*)",
       "Bash(touch:*)",
       "Bash(rm:*)",
@@ -23,11 +22,8 @@
       "Bash(git ls-tree:*)",
       "mcp__godot__get_debug_output",
       "mcp__godot__run_project",
-      "Bash(\"/mnt/c/Users/yoshi/Desktop/Godot/Godot_v4.4.1-stable_console_win64.exe\" --headless --verbose project.godot --quit)",
-      "Bash(\"/mnt/c/Users/yoshi/Desktop/Godot/Godot_v4.4.1-stable_win64_console.exe\" --headless --verbose --quit)",
       "mcp__godot__get_godot_version",
-      "Bash(\"/mnt/c/Users/yoshi/Desktop/Godot/Godot_v4.4.1-stable_win64.exe\" --headless --quit)",
-      "Bash(\"/mnt/c/Users/yoshi/Desktop/Godot/Godot_v4.4.1-stable_win64.exe\" --check-only --script res://scripts/debug_block_resource.gd)"
+      "Bash(\"/mnt/c/Program Files/Godot/Godot_v4.4.1-stable_win64.exe\" --editor project.godot)"
     ],
     "deny": []
   },

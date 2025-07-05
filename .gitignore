@@ -12,3 +12,6 @@ tools/godot-mcp/
 # Godot generated files
 *.tmp
 *.uid
+
+# IDE files
+.idea/
