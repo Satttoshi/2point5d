@@ -1,3 +1,14 @@
 # Godot 4+ specific ignores
 .godot/
 /android/
+
+# MCP configuration
+.mcp.json
+
+# Third-party assets and tools
+assets/kenney_platformer-kit/
+tools/godot-mcp/
+
+# Godot generated files
+*.tmp
+*.uid
