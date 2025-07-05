@@ -1,8 +1,31 @@
 {
   "permissions": {
     "allow": [
-      "Bash(godot:*)"
+      "Bash(godot:*)",
+      "Bash(mkdir:*)",
+      "Bash(git clone:*)",
+      "Bash(npm install)",
+      "Bash(npm run build:*)",
+      "Bash(ls:*)",
+      "Bash(find:*)",
+      "WebFetch(domain:docs.anthropic.com)",
+      "Bash(claude mcp add godot:*)",
+      "Bash(claude mcp:*)",
+      "Bash(mv:*)",
+      "Bash(/mcp)",
+      "mcp__godot__launch_editor",
+      "Bash(\"/mnt/c/Users/yoshi/Desktop/Godot/Godot_v4.4.1-stable_win64.exe\" --editor project.godot)",
+      "Bash(git rm:*)",
+      "Bash(touch:*)",
+      "Bash(rm:*)",
+      "Bash(git branch:*)",
+      "Bash(git check-ignore:*)",
+      "Bash(git ls-tree:*)"
     ],
     "deny": []
-  }
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "godot"
+  ]
 }
