@@ -65,12 +65,17 @@ var camera_velocity : Vector3 = Vector3.ZERO
 ## Block Interaction Variables
 var world_grid: WorldGrid = null
 var player_inventory: Inventory = null
-var block_interaction_range : float = 5.0
+## Maximum range for block placement/removal in grid units
+@export var block_interaction_range : float = 6.0
 var current_targeted_block : Vector2i = Vector2i.ZERO
 var has_targeted_block : bool = false
 var selected_block_id : String = "grass"
 var available_blocks : Array[String] = ["grass", "stone"]
 var current_block_index : int = 0
+## Camera reference for mouse to world conversion
+var camera: Camera3D = null
+## Visual indicator for targeted block
+var target_indicator: MeshInstance3D = null
 
 ## IMPORTANT REFERENCES
 @onready var head: Node3D = $Head
@@ -83,6 +88,20 @@ func _ready() -> void:
 	# Setup third-person camera position
 	head.position = camera_offset
 	head.rotation = Vector3(deg_to_rad(-15), 0, 0)
+	
+	# Get camera reference for mouse targeting
+	camera = head.get_node("Camera3D") if head.has_node("Camera3D") else null
+	if camera == null:
+		# Create camera if it doesn't exist
+		camera = Camera3D.new()
+		camera.name = "Camera3D"
+		head.add_child(camera)
+		print("ProtoController: Created camera for block targeting")
+	else:
+		print("ProtoController: Found existing camera for block targeting")
+	
+	# Create visual target indicator
+	setup_target_indicator()
 	
 	# Setup block interaction
 	setup_block_interaction()
@@ -218,6 +237,37 @@ func disable_freefly():
 	collider.disabled = false
 	freeflying = false
 
+## Setup visual target indicator for block placement
+func setup_target_indicator():
+	# Create a simple wireframe cube to show target position
+	target_indicator = MeshInstance3D.new()
+	target_indicator.name = "TargetIndicator"
+	
+	# Create wireframe material
+	var material = StandardMaterial3D.new()
+	material.flags_unshaded = true
+	material.flags_use_point_size = true
+	material.flags_transparent = true
+	material.albedo_color = Color.YELLOW
+	material.albedo_color.a = 0.7
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	material.flags_do_not_use_vertex_color = true
+	
+	# Create a simple box mesh
+	var box_mesh = BoxMesh.new()
+	box_mesh.size = Vector3(1.0, 1.0, 1.0)
+	target_indicator.mesh = box_mesh
+	target_indicator.material_override = material
+	
+	# Make it initially invisible
+	target_indicator.visible = false
+	
+	# Add to world (not to player to avoid moving with player)
+	get_parent().add_child.call_deferred(target_indicator)
+	
+	print("ProtoController: Created target indicator")
+
 ## Initialize block interaction system
 func setup_block_interaction():
 	# Find or create world grid in the scene
@@ -295,47 +345,39 @@ func handle_block_interaction_input(event: InputEvent):
 		if Input.is_action_just_pressed(action_name):
 			select_block_by_index(i - 1)
 
-## Update block targeting based on player position and direction
+## Update block targeting based on mouse cursor position (Terraria-style)
 func update_block_targeting():
-	if world_grid == null:
+	if world_grid == null or camera == null:
+		has_targeted_block = false
 		return
 	
-	# Cast a ray from the player forward to find target position
-	var space_state = get_world_3d().direct_space_state
-	var origin = global_position
-	var forward_direction = Vector3.RIGHT if velocity.x >= 0 else Vector3.LEFT
-	var target = origin + forward_direction * block_interaction_range
+	# Get mouse position in screen coordinates
+	var mouse_pos = get_viewport().get_mouse_position()
 	
-	# For 2.5D, we'll target blocks at the player's position on Y axis
-	var grid_target = world_grid.world_to_grid(Vector3(target.x, global_position.y, 0))
+	# Convert mouse position to world position using camera projection
+	var world_pos = camera.project_position(mouse_pos, camera.global_position.distance_to(global_position))
 	
-	# Check if we should target adjacent empty space for placement
-	if not world_grid.has_block(grid_target):
-		# Look for nearest adjacent position
-		var adjacent_positions = [
-			grid_target + Vector2i(1, 0),   # Right
-			grid_target + Vector2i(-1, 0),  # Left
-			grid_target + Vector2i(0, 1),   # Up
-			grid_target + Vector2i(0, -1)   # Down
-		]
-		
-		# Find the closest adjacent position
-		var closest_distance = INF
-		var best_target = grid_target
-		
-		for pos in adjacent_positions:
-			var world_pos = world_grid.grid_to_world(pos)
-			var distance = global_position.distance_to(world_pos)
-			if distance < closest_distance and distance <= block_interaction_range:
-				closest_distance = distance
-				best_target = pos
-		
-		grid_target = best_target
+	# Convert world position to grid coordinates (2.5D constraint)
+	var grid_target = world_grid.world_to_grid(Vector3(world_pos.x, world_pos.y, 0))
 	
-	# Update targeting
-	current_targeted_block = grid_target
+	# Check if target is within interaction range
 	var target_world_pos = world_grid.grid_to_world(grid_target)
-	has_targeted_block = global_position.distance_to(target_world_pos) <= block_interaction_range
+	var distance_to_target = global_position.distance_to(target_world_pos)
+	
+	if distance_to_target <= block_interaction_range:
+		current_targeted_block = grid_target
+		has_targeted_block = true
+		
+		# Update visual indicator position and visibility
+		if target_indicator:
+			target_indicator.global_position = target_world_pos
+			target_indicator.visible = true
+	else:
+		has_targeted_block = false
+		
+		# Hide visual indicator
+		if target_indicator:
+			target_indicator.visible = false
 
 ## Place a block at the currently targeted position
 func place_block_at_target():
@@ -346,16 +388,14 @@ func place_block_at_target():
 		push_warning("ProtoController: No block type selected")
 		return
 	
-	# Check if position is valid for placement (not occupied, not inside player)
+	# Check if position is valid for placement (not occupied)
 	if world_grid.has_block(current_targeted_block):
-		print("ProtoController: Cannot place block - position occupied")
-		return
+		return  # Position already occupied
 	
-	# Check if we're trying to place inside the player
+	# Check if we're trying to place inside the player (minimum distance check)
 	var target_world_pos = world_grid.grid_to_world(current_targeted_block)
 	if global_position.distance_to(target_world_pos) < 0.5:  # Player collision radius
-		print("ProtoController: Cannot place block - too close to player")
-		return
+		return  # Too close to player
 	
 	# Check if player has the item in inventory
 	if not player_inventory.has_item(selected_block_id, 1):
@@ -380,8 +420,7 @@ func remove_block_at_target():
 		return
 	
 	if not world_grid.has_block(current_targeted_block):
-		print("ProtoController: No block to remove at target position")
-		return
+		return  # No block to remove
 	
 	var block_id = world_grid.get_block_id(current_targeted_block)
 	if world_grid.remove_block(current_targeted_block):
