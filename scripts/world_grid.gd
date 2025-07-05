@@ -26,6 +26,8 @@ var _block_container: Node3D
 var _mesh_instances: Dictionary = {}
 ## Dictionary for collision shapes [Vector2i position -> StaticBody3D]
 var _collision_bodies: Dictionary = {}
+## Target indicator for block placement/removal
+var _target_indicator: WireframeCube = null
 
 ## Internal class to represent a block instance in the world
 class BlockInstance:
@@ -46,11 +48,18 @@ class BlockInstance:
 func _ready():
 	print("WorldGrid: Initializing world grid system...")
 	_setup_container()
+	_setup_target_indicator()
 	
 	# Connect to BlockRegistry signals to handle block type changes
 	if BlockRegistry:
 		BlockRegistry.block_registered.connect(_on_block_registered)
 		BlockRegistry.block_unregistered.connect(_on_block_unregistered)
+	
+	# Connect to GameEvents for event-driven communication
+	GameEvents.block_placement_requested.connect(_on_block_placement_requested)
+	GameEvents.block_removal_requested.connect(_on_block_removal_requested)
+	GameEvents.target_indicator_update_requested.connect(_on_target_indicator_update_requested)
+	GameEvents.target_indicator_hide_requested.connect(_on_target_indicator_hide_requested)
 	
 	print("WorldGrid: World grid initialized with cell size: %f" % cell_size)
 
@@ -59,6 +68,20 @@ func _setup_container():
 	_block_container = Node3D.new()
 	_block_container.name = "BlockContainer"
 	add_child(_block_container)
+
+## Setup the target indicator for block placement/removal
+func _setup_target_indicator():
+	_target_indicator = WireframeCube.new()
+	_target_indicator.name = "TargetIndicator"
+	_target_indicator.cube_size = Vector3.ONE
+	_target_indicator.line_thickness = 0.05
+	_target_indicator.set_color(Color.YELLOW)
+	_target_indicator.set_alpha(0.8)
+	_target_indicator.visible = false
+	
+	# Add to world (not to block container to avoid conflicts)
+	add_child(_target_indicator)
+	print("WorldGrid: Created target indicator")
 
 ## Convert world position to grid coordinates (2D for 2.5D constraint)
 func world_to_grid(world_pos: Vector3) -> Vector2i:
@@ -108,7 +131,7 @@ func place_block(grid_pos: Vector2i, block_id: String) -> bool:
 		push_error("WorldGrid: Failed to create visual for block: %s" % block_id)
 		return false
 	
-	# Create collision
+	# Create collision separately since we simplified the block structure
 	if block_resource.has_collision:
 		_create_block_collision(block_instance)
 	
@@ -214,6 +237,38 @@ func clear_world():
 func get_block_count() -> int:
 	return _blocks.size()
 
+## Show target indicator at specified grid position
+func show_target_indicator(grid_pos: Vector2i):
+	if _target_indicator:
+		var world_pos = grid_to_world(grid_pos)
+		_target_indicator.global_position = world_pos
+		_target_indicator.visible = true
+
+## Hide target indicator
+func hide_target_indicator():
+	if _target_indicator:
+		_target_indicator.visible = false
+
+## Update target indicator position and visibility based on validity
+func update_target_indicator(grid_pos: Vector2i, is_valid: bool):
+	if _target_indicator:
+		var world_pos = grid_to_world(grid_pos)
+		_target_indicator.global_position = world_pos
+		_target_indicator.visible = is_valid
+		
+		# Change color based on validity (green for valid placement, red for invalid)
+		if is_valid:
+			if has_block(grid_pos):
+				_target_indicator.set_color(Color.RED)  # Block exists, can remove
+			else:
+				_target_indicator.set_color(Color.GREEN)  # Empty space, can place
+		else:
+			_target_indicator.set_color(Color.GRAY)  # Invalid target
+
+## Check if target indicator is currently visible
+func is_target_indicator_visible() -> bool:
+	return _target_indicator != null and _target_indicator.visible
+
 ## Check if a position is valid for block placement
 func _is_valid_position(grid_pos: Vector2i) -> bool:
 	return abs(grid_pos.x) <= world_bounds and abs(grid_pos.y) <= world_bounds
@@ -222,9 +277,11 @@ func _is_valid_position(grid_pos: Vector2i) -> bool:
 func _create_block_visual(block_instance: BlockInstance) -> bool:
 	var block_resource = block_instance.block_resource
 	
+	
 	if block_resource.mesh_scene == null:
 		push_error("WorldGrid: No mesh scene defined for block: %s" % block_instance.block_id)
 		return false
+	
 	
 	# Instance the mesh scene
 	var mesh_instance = block_resource.mesh_scene.instantiate()
@@ -232,9 +289,11 @@ func _create_block_visual(block_instance: BlockInstance) -> bool:
 		push_error("WorldGrid: Failed to instantiate mesh scene for block: %s" % block_instance.block_id)
 		return false
 	
+	
 	# Position the mesh instance
 	var world_pos = grid_to_world(block_instance.position)
 	mesh_instance.position = world_pos
+	
 	
 	# Add to container
 	_block_container.add_child(mesh_instance)
@@ -291,6 +350,49 @@ func _on_block_unregistered(block_id: String):
 	
 	# TODO: Handle removal of blocks of this type from the world
 	# This would be needed for mod support or dynamic block type changes
+
+## Handle block placement requests from events
+func _on_block_placement_requested(grid_pos: Vector2i, block_id: String):
+	print("WorldGrid: Received block placement request at %s: %s" % [grid_pos, block_id])
+	
+	# Validate placement
+	if not _is_valid_position(grid_pos):
+		print("WorldGrid: Invalid position for placement: %s" % grid_pos)
+		return
+	
+	if has_block(grid_pos):
+		print("WorldGrid: Position already occupied: %s" % grid_pos)
+		return
+	
+	# Attempt to place the block
+	if place_block(grid_pos, block_id):
+		GameEvents.notify_block_placed(grid_pos, block_id)
+	else:
+		print("WorldGrid: Failed to place block at %s" % grid_pos)
+
+## Handle block removal requests from events
+func _on_block_removal_requested(grid_pos: Vector2i):
+	print("WorldGrid: Received block removal request at %s" % grid_pos)
+	
+	if not has_block(grid_pos):
+		print("WorldGrid: No block to remove at %s" % grid_pos)
+		return
+	
+	var block_id = get_block_id(grid_pos)
+	
+	# Attempt to remove the block
+	if remove_block(grid_pos):
+		GameEvents.notify_block_removed(grid_pos, block_id)
+	else:
+		print("WorldGrid: Failed to remove block at %s" % grid_pos)
+
+## Handle target indicator update requests from events
+func _on_target_indicator_update_requested(grid_pos: Vector2i, is_valid: bool):
+	update_target_indicator(grid_pos, is_valid)
+
+## Handle target indicator hide requests from events
+func _on_target_indicator_hide_requested():
+	hide_target_indicator()
 
 ## Debug function to visualize the grid
 func _draw_debug_grid():

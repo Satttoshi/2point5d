@@ -70,12 +70,10 @@ var player_inventory: Inventory = null
 var current_targeted_block : Vector2i = Vector2i.ZERO
 var has_targeted_block : bool = false
 var selected_block_id : String = "grass"
-var available_blocks : Array[String] = ["grass", "stone"]
+var available_blocks : Array[String] = ["grass", "stone", "dirt"]
 var current_block_index : int = 0
 ## Camera reference for mouse to world conversion
 var camera: Camera3D = null
-## Visual indicator for targeted block
-var target_indicator: MeshInstance3D = null
 
 ## IMPORTANT REFERENCES
 @onready var head: Node3D = $Head
@@ -99,9 +97,6 @@ func _ready() -> void:
 		print("ProtoController: Created camera for block targeting")
 	else:
 		print("ProtoController: Found existing camera for block targeting")
-	
-	# Create visual target indicator
-	setup_target_indicator()
 	
 	# Setup block interaction
 	setup_block_interaction()
@@ -237,36 +232,6 @@ func disable_freefly():
 	collider.disabled = false
 	freeflying = false
 
-## Setup visual target indicator for block placement
-func setup_target_indicator():
-	# Create a simple wireframe cube to show target position
-	target_indicator = MeshInstance3D.new()
-	target_indicator.name = "TargetIndicator"
-	
-	# Create wireframe material
-	var material = StandardMaterial3D.new()
-	material.flags_unshaded = true
-	material.flags_use_point_size = true
-	material.flags_transparent = true
-	material.albedo_color = Color.YELLOW
-	material.albedo_color.a = 0.7
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.cull_mode = BaseMaterial3D.CULL_DISABLED
-	material.flags_do_not_use_vertex_color = true
-	
-	# Create a simple box mesh
-	var box_mesh = BoxMesh.new()
-	box_mesh.size = Vector3(1.0, 1.0, 1.0)
-	target_indicator.mesh = box_mesh
-	target_indicator.material_override = material
-	
-	# Make it initially invisible
-	target_indicator.visible = false
-	
-	# Add to world (not to player to avoid moving with player)
-	get_parent().add_child.call_deferred(target_indicator)
-	
-	print("ProtoController: Created target indicator")
 
 ## Initialize block interaction system
 func setup_block_interaction():
@@ -293,6 +258,10 @@ func setup_block_interaction():
 		player_inventory.give_starter_items()
 	
 	print("ProtoController: Created player inventory")
+	
+	# Connect to GameEvents for inventory management
+	GameEvents.block_placed.connect(_on_block_placed)
+	GameEvents.block_removed.connect(_on_block_removed)
 	
 	# Initialize available blocks from registry
 	update_available_blocks()
@@ -327,11 +296,11 @@ func handle_block_interaction_input(event: InputEvent):
 	
 	# Block placement
 	if Input.is_action_just_pressed("place_block"):
-		place_block_at_target()
+		request_block_placement()
 	
 	# Block removal
 	if Input.is_action_just_pressed("remove_block"):
-		remove_block_at_target()
+		request_block_removal()
 	
 	# Block selection
 	if Input.is_action_just_pressed("block_selector_next"):
@@ -349,6 +318,8 @@ func handle_block_interaction_input(event: InputEvent):
 func update_block_targeting():
 	if world_grid == null or camera == null:
 		has_targeted_block = false
+		if world_grid:
+			world_grid.hide_target_indicator()
 		return
 	
 	# Get mouse position in screen coordinates
@@ -368,74 +339,43 @@ func update_block_targeting():
 		current_targeted_block = grid_target
 		has_targeted_block = true
 		
-		# Update visual indicator position and visibility
-		if target_indicator:
-			target_indicator.global_position = target_world_pos
-			target_indicator.visible = true
+		# Update WorldGrid's target indicator
+		world_grid.update_target_indicator(grid_target, true)
 	else:
 		has_targeted_block = false
 		
-		# Hide visual indicator
-		if target_indicator:
-			target_indicator.visible = false
+		# Hide WorldGrid's target indicator
+		world_grid.hide_target_indicator()
 
-## Place a block at the currently targeted position
-func place_block_at_target():
-	if not has_targeted_block or world_grid == null:
+## Request block placement at the currently targeted position
+func request_block_placement():
+	if not has_targeted_block:
 		return
 	
 	if selected_block_id.is_empty():
 		push_warning("ProtoController: No block type selected")
 		return
 	
-	# Check if position is valid for placement (not occupied)
-	if world_grid.has_block(current_targeted_block):
-		return  # Position already occupied
+	# Check if player has the item in inventory
+	if not player_inventory.has_item(selected_block_id, 1):
+		print("ProtoController: No %s blocks in inventory" % selected_block_id)
+		return
 	
 	# Check if we're trying to place inside the player (minimum distance check)
 	var target_world_pos = world_grid.grid_to_world(current_targeted_block)
 	if global_position.distance_to(target_world_pos) < 0.5:  # Player collision radius
 		return  # Too close to player
 	
-	# Check if player has the item in inventory
-	if not player_inventory.has_item(selected_block_id, 1):
-		print("ProtoController: No %s blocks in inventory" % selected_block_id)
-		return
-	
-	# Place the block
-	if world_grid.place_block(current_targeted_block, selected_block_id):
-		# Remove item from inventory (unless in infinite mode)
-		player_inventory.remove_item(selected_block_id, 1)
-		print("ProtoController: Placed %s block at %s" % [selected_block_id, current_targeted_block])
-		
-		# Update available blocks if inventory changed
-		if not player_inventory.infinite_mode:
-			update_available_blocks()
-	else:
-		print("ProtoController: Failed to place block")
+	# Request placement via event system
+	GameEvents.request_block_placement(current_targeted_block, selected_block_id)
 
-## Remove a block at the currently targeted position
-func remove_block_at_target():
-	if not has_targeted_block or world_grid == null:
+## Request block removal at the currently targeted position
+func request_block_removal():
+	if not has_targeted_block:
 		return
 	
-	if not world_grid.has_block(current_targeted_block):
-		return  # No block to remove
-	
-	var block_id = world_grid.get_block_id(current_targeted_block)
-	if world_grid.remove_block(current_targeted_block):
-		# Add item to inventory
-		var added_quantity = player_inventory.add_item(block_id, 1)
-		if added_quantity > 0:
-			print("ProtoController: Removed %s block from %s and added to inventory" % [block_id, current_targeted_block])
-		else:
-			print("ProtoController: Removed %s block from %s but inventory full" % [block_id, current_targeted_block])
-		
-		# Update available blocks if inventory changed
-		if not player_inventory.infinite_mode:
-			update_available_blocks()
-	else:
-		print("ProtoController: Failed to remove block")
+	# Request removal via event system
+	GameEvents.request_block_removal(current_targeted_block)
 
 ## Cycle through available block types
 func cycle_selected_block(direction: int):
@@ -448,6 +388,9 @@ func cycle_selected_block(direction: int):
 	
 	selected_block_id = available_blocks[current_block_index]
 	print("ProtoController: Selected block: %s (%d/%d)" % [selected_block_id, current_block_index + 1, available_blocks.size()])
+	
+	# Notify via events
+	GameEvents.notify_player_selected_block_changed(selected_block_id, current_block_index)
 
 ## Select a block by index in the available blocks array
 func select_block_by_index(index: int):
@@ -457,6 +400,9 @@ func select_block_by_index(index: int):
 	current_block_index = index
 	selected_block_id = available_blocks[current_block_index]
 	print("ProtoController: Selected block: %s (%d/%d)" % [selected_block_id, current_block_index + 1, available_blocks.size()])
+	
+	# Notify via events
+	GameEvents.notify_player_selected_block_changed(selected_block_id, current_block_index)
 
 ## Get the currently selected block type
 func get_selected_block() -> String:
@@ -469,6 +415,35 @@ func get_targeted_block_position() -> Vector2i:
 ## Check if we have a valid block target
 func has_block_target() -> bool:
 	return has_targeted_block
+
+## Handle block placement events (for inventory management)
+func _on_block_placed(grid_pos: Vector2i, block_id: String):
+	# Remove item from inventory (unless in infinite mode)
+	player_inventory.remove_item(block_id, 1)
+	print("ProtoController: Inventory updated after placing %s block" % block_id)
+	
+	# Update available blocks if inventory changed
+	if not player_inventory.infinite_mode:
+		update_available_blocks()
+	
+	# Notify via events
+	GameEvents.notify_item_removed_from_inventory(block_id, 1)
+
+## Handle block removal events (for inventory management)
+func _on_block_removed(grid_pos: Vector2i, block_id: String):
+	# Add item to inventory
+	var added_quantity = player_inventory.add_item(block_id, 1)
+	if added_quantity > 0:
+		print("ProtoController: Added %s block to inventory after removal" % block_id)
+	else:
+		print("ProtoController: Could not add %s block to inventory (full)" % block_id)
+	
+	# Update available blocks if inventory changed
+	if not player_inventory.infinite_mode:
+		update_available_blocks()
+	
+	# Notify via events
+	GameEvents.notify_item_added_to_inventory(block_id, added_quantity)
 
 ## Checks if some Input Actions haven't been created.
 ## Disables functionality accordingly.

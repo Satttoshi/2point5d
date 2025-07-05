@@ -226,47 +226,50 @@ func _load_blocks_from_directory(dir_path: String):
 				register_block(block_resource)
 		file_name = dir.get_next()
 
-## Create basic block types for initial setup
+## Create basic block types for initial setup using debug blocks
 func _create_basic_blocks():
-	print("BlockRegistry: Creating basic block types...")
+	print("BlockRegistry: Creating basic debug block types...")
 	
-	# Create basic grass block
-	var grass_block = BlockResource.new()
-	grass_block.block_id = "grass"
-	grass_block.block_name = "Grass Block"
+	# Create basic grass block using debug block resource
+	var grass_block = DebugBlockResource.create_debug_block(
+		"grass",
+		"Grass Block",
+		Color.GREEN
+	)
 	grass_block.block_description = "A basic grass block for building platforms"
 	grass_block.durability = 100
 	grass_block.break_time = 1.0
 	grass_block.category = "Natural"
 	grass_block.tags = ["grass", "natural", "platform"]
-	grass_block.placeable = true
-	grass_block.breakable = true
-	grass_block.has_collision = true
-	grass_block.is_solid = true
-	grass_block.is_transparent = false
-	
-	# For now, we'll set the mesh_scene to null and handle it in the world grid
-	# This will be properly connected to the actual mesh library later
-	grass_block.mesh_scene = preload("res://assets/kenney_platformer-kit/Models/block-grass.glb")
 	
 	register_block(grass_block)
 	
-	# Create basic stone block (using grass model for now)
-	var stone_block = BlockResource.new()
-	stone_block.block_id = "stone"
-	stone_block.block_name = "Stone Block"
+	# Create basic stone block using debug block resource
+	var stone_block = DebugBlockResource.create_debug_block(
+		"stone",
+		"Stone Block",
+		Color.GRAY
+	)
 	stone_block.block_description = "A durable stone block for solid construction"
 	stone_block.durability = 200
 	stone_block.break_time = 2.0
 	stone_block.category = "Natural"
 	stone_block.tags = ["stone", "natural", "durable"]
-	stone_block.placeable = true
-	stone_block.breakable = true
-	stone_block.has_collision = true
-	stone_block.is_solid = true
-	stone_block.is_transparent = false
-	stone_block.mesh_scene = preload("res://assets/kenney_platformer-kit/Models/block-snow.glb")
 	
 	register_block(stone_block)
 	
-	print("BlockRegistry: Created %d basic block types" % _blocks.size())
+	# Create dirt block for variety
+	var dirt_block = DebugBlockResource.create_debug_block(
+		"dirt",
+		"Dirt Block",
+		Color.SADDLE_BROWN
+	)
+	dirt_block.block_description = "Basic dirt block for quick construction"
+	dirt_block.durability = 50
+	dirt_block.break_time = 0.5
+	dirt_block.category = "Natural"
+	dirt_block.tags = ["dirt", "natural", "quick"]
+	
+	register_block(dirt_block)
+	
+	print("BlockRegistry: Created %d debug block types" % _blocks.size())
