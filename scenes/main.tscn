@@ -1,7 +1,7 @@
-[gd_scene load_steps=6 format=3 uid="uid://beog17hc5xkto"]
+[gd_scene load_steps=6 format=3 uid="uid://b8iihpvqe4kie"]
 
-[ext_resource type="PackedScene" path="res://scenes/player/player.tscn" id="1_0xm2m"]
-[ext_resource type="Script" uid="uid://b05ky1bahkhqc" path="res://src/world/world_grid.gd" id="2_h2yge"]
+[ext_resource type="PackedScene" uid="uid://c07l4um57l0uj" path="res://scenes/player/player.tscn" id="1_ig7tw"]
+[ext_resource type="Script" uid="uid://b05ky1bahkhqc" path="res://src/world/world_grid.gd" id="3_worldgrid"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_7dm0k"]
 sky_top_color = Color(0.192056, 0.476985, 0.652589, 1)
@@ -19,6 +19,9 @@ glow_enabled = true
 
 [node name="Main" type="Node3D"]
 
+[node name="Player" parent="." instance=ExtResource("1_ig7tw")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.7, 0.1, -0.2)
+
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_0xm2m")
 
@@ -31,7 +34,5 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, -2.23517e-08)
 use_collision = true
 size = Vector3(16, 0.1, 1)
 
-[node name="Player" parent="." instance=ExtResource("1_0xm2m")]
-
 [node name="WorldGrid" type="Node3D" parent="."]
-script = ExtResource("2_h2yge")
+script = ExtResource("3_worldgrid")
