@@ -44,6 +44,8 @@ var _wall_container: Node3D
 var _wall_mesh_instances: Dictionary = {}
 ## Reference to the player for collision checking
 var _player: CharacterBody3D = null
+## Root node for all particle effects
+var _particle_container: Node3D
 
 ## Internal class to represent a block instance in the world
 class BlockInstance:
@@ -178,6 +180,10 @@ func _setup_container():
 	_wall_container = Node3D.new()
 	_wall_container.name = "WallContainer"
 	add_child(_wall_container)
+	
+	_particle_container = Node3D.new()
+	_particle_container.name = "ParticleContainer"
+	add_child(_particle_container)
 
 ## Setup the target indicator for block placement/removal
 func _setup_target_indicator():
@@ -284,6 +290,10 @@ func _remove_block_internal(grid_pos: Vector2i) -> bool:
 	
 	var block_instance = _blocks[grid_pos] as BlockInstance
 	var block_id = block_instance.block_id
+	var block_resource = block_instance.block_resource
+	
+	# Create destruction particles before removing the block
+	_create_destruction_particles(grid_pos, block_resource)
 	
 	# Remove visual representation
 	_remove_block_visual(grid_pos)
@@ -621,6 +631,10 @@ func _remove_wall(grid_pos: Vector2i) -> bool:
 	
 	var wall_instance = _walls[grid_pos] as WallInstance
 	var wall_id = wall_instance.wall_id
+	var wall_resource = wall_instance.wall_resource
+	
+	# Create destruction particles for wall removal
+	_create_destruction_particles(grid_pos, wall_resource)
 	
 	# Remove visual representation
 	if _wall_mesh_instances.has(grid_pos):
@@ -714,3 +728,111 @@ func _would_intersect_player(grid_pos: Vector2i) -> bool:
 	return (block_min.x < player_max.x and block_max.x > player_min.x and
 			block_min.y < player_max.y and block_max.y > player_min.y and
 			block_min.z < player_max.z and block_max.z > player_min.z)
+
+## Create destruction particles when a block is removed
+func _create_destruction_particles(grid_pos: Vector2i, block_resource: BlockResource):
+	if _particle_container == null:
+		return
+	
+	# Create GPUParticles3D for the destruction effect
+	var particles = GPUParticles3D.new()
+	particles.name = "DestructionParticles_%s" % str(grid_pos)
+	
+	# Position particles at the block center
+	var world_pos = grid_to_world(grid_pos)
+	particles.global_position = world_pos
+	
+	# Configure particle system
+	particles.emitting = true
+	particles.amount = 50  # Number of particles
+	particles.lifetime = 3.0  # Total effect duration
+	particles.one_shot = true  # Single burst, not continuous
+	particles.explosiveness = 1.0  # All particles emit at once
+	
+	# Create process material for particle behavior
+	var material = ParticleProcessMaterial.new()
+	
+	# Emission settings
+	material.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	material.emission_box_extents = Vector3(0.4, 0.4, 0.4)  # Emit from within the block area
+	
+	# Direction and spread
+	material.direction = Vector3(0, 1, 0)  # General upward direction
+	material.initial_velocity_min = 2.0
+	material.initial_velocity_max = 5.0
+	material.angular_velocity_min = -180.0
+	material.angular_velocity_max = 180.0
+	
+	# Gravity and physics
+	material.gravity = Vector3(0, -9.8, 0)  # Natural gravity
+	material.scale_min = 0.1
+	material.scale_max = 0.3
+	
+	# Color based on block type - use the actual block color
+	var base_color = Color.WHITE
+	if block_resource != null:
+		# Check if it's a DebugBlockResource with a block_color property
+		if block_resource is DebugBlockResource:
+			base_color = block_resource.block_color
+		else:
+			# Fallback color mapping for other block types
+			match block_resource.block_id:
+				"grass":
+					base_color = Color.GREEN
+				"dirt":
+					base_color = Color.SADDLE_BROWN
+				"stone":
+					base_color = Color.GRAY
+				"sand":
+					base_color = Color(0.8, 0.7, 0.4, 1.0)
+				"brick_wall":
+					base_color = Color(0.7, 0.4, 0.3, 1.0)
+				_:
+					base_color = Color.WHITE
+	
+	material.color = base_color
+	material.color_ramp = _create_fade_out_gradient(base_color)
+	
+	print("WorldGrid: Creating particles with color %s for block %s" % [base_color, block_resource.block_id if block_resource else "unknown"])
+	
+	particles.process_material = material
+	
+	# Create simple cube mesh for particles with material
+	var mesh = BoxMesh.new()
+	mesh.size = Vector3(0.1, 0.1, 0.1)  # Small cubes
+	
+	# Create a basic material that will take the particle color
+	var mesh_material = StandardMaterial3D.new()
+	mesh_material.albedo_color = base_color
+	mesh_material.vertex_color_use_as_albedo = true  # Important: use vertex colors from particles
+	mesh_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED  # Simple shading for particles
+	mesh.surface_set_material(0, mesh_material)
+	
+	particles.draw_pass_1 = mesh
+	
+	# Add to particle container
+	_particle_container.add_child(particles)
+	
+	# Clean up particles after they finish
+	var timer = Timer.new()
+	timer.wait_time = 3.5  # Slightly longer than particle lifetime
+	timer.one_shot = true
+	timer.timeout.connect(_cleanup_particles.bind(particles))
+	_particle_container.add_child(timer)
+	timer.start()
+	
+	print("WorldGrid: Created destruction particles for block at %s" % grid_pos)
+
+## Create a gradient that fades particles out over time
+func _create_fade_out_gradient(base_color: Color) -> Gradient:
+	var gradient = Gradient.new()
+	gradient.add_point(0.0, Color(base_color.r, base_color.g, base_color.b, 1.0))    # Start fully opaque with block color
+	gradient.add_point(0.7, Color(base_color.r, base_color.g, base_color.b, 0.8))   # Stay mostly visible
+	gradient.add_point(1.0, Color(base_color.r, base_color.g, base_color.b, 0.0))   # Fade to transparent
+	return gradient
+
+## Clean up finished particle systems
+func _cleanup_particles(particles: GPUParticles3D):
+	if particles and is_instance_valid(particles):
+		particles.queue_free()
+		print("WorldGrid: Cleaned up destruction particles")
