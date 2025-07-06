@@ -77,6 +77,10 @@ var camera: Camera3D = null
 ## Current block the player is standing on (for degradation system)
 var current_ground_block : Vector2i = Vector2i.ZERO
 var is_standing_on_block : bool = false
+## Continuous input timing
+var place_block_timer : float = 0.0
+var remove_block_timer : float = 0.0
+var continuous_input_interval : float = 0.1  # Time between continuous actions (in seconds)
 
 ## IMPORTANT REFERENCES
 @onready var head: Node3D = $Head
@@ -168,6 +172,9 @@ func _physics_process(delta: float) -> void:
 	
 	# Update ground detection for degradable blocks
 	update_ground_detection()
+	
+	# Handle continuous block interaction
+	handle_continuous_block_interaction(delta)
 
 
 
@@ -300,13 +307,15 @@ func handle_block_interaction_input(event: InputEvent):
 	if world_grid == null:
 		return
 	
-	# Block placement
+	# Block placement - immediate action on first press
 	if Input.is_action_just_pressed("place_block"):
 		request_block_placement()
+		place_block_timer = 0.0  # Reset timer for continuous action
 	
-	# Block removal
+	# Block removal - immediate action on first press
 	if Input.is_action_just_pressed("remove_block"):
 		request_block_removal()
+		remove_block_timer = 0.0  # Reset timer for continuous action
 	
 	# Block selection
 	if Input.is_action_just_pressed("block_selector_next"):
@@ -319,6 +328,29 @@ func handle_block_interaction_input(event: InputEvent):
 		var action_name = "block_hotkey_%d" % i
 		if Input.is_action_just_pressed(action_name):
 			select_block_by_index(i - 1)
+
+## Handle continuous block interaction when holding mouse buttons
+func handle_continuous_block_interaction(delta: float):
+	if world_grid == null:
+		return
+	
+	# Handle continuous block placement
+	if Input.is_action_pressed("place_block"):
+		place_block_timer += delta
+		if place_block_timer >= continuous_input_interval:
+			request_block_placement()
+			place_block_timer = 0.0
+	else:
+		place_block_timer = 0.0
+	
+	# Handle continuous block removal
+	if Input.is_action_pressed("remove_block"):
+		remove_block_timer += delta
+		if remove_block_timer >= continuous_input_interval:
+			request_block_removal()
+			remove_block_timer = 0.0
+	else:
+		remove_block_timer = 0.0
 
 ## Update block targeting based on mouse cursor position (Terraria-style)
 func update_block_targeting():
