@@ -89,6 +89,9 @@ func _ready():
 	GameEvents.player_standing_on_block.connect(_on_player_standing_on_block)
 	
 	print("WorldGrid: World grid initialized with cell size: %f" % cell_size)
+	
+	# Create starting platform with pre-placed blocks
+	_create_starting_platform()
 
 ## Process degradation for degradable blocks
 func _process(delta: float):
@@ -635,3 +638,37 @@ func clear_walls():
 	for grid_pos in _walls.keys():
 		_remove_wall(grid_pos)
 	print("WorldGrid: All walls cleared")
+
+## Create the starting platform with pre-placed blocks
+func _create_starting_platform():
+	# Wait for BlockRegistry to be ready
+	if not BlockRegistry or BlockRegistry.get_block_count() == 0:
+		# Defer creation until next frame when BlockRegistry is ready
+		call_deferred("_create_starting_platform")
+		return
+	
+	print("WorldGrid: Creating starting platform...")
+	
+	# Platform dimensions: 20 wide x 5 tall
+	var platform_width = 20
+	var platform_height = 5
+	
+	# Center the platform around x=0, position it below player start (y=0.1)
+	# Top row should be at y=0 (just below player), so bottom starts at y=-4
+	var start_x = -(platform_width / 2)
+	var start_y = -4
+	
+	for row in range(platform_height):
+		for col in range(platform_width):
+			var grid_pos = Vector2i(start_x + col, start_y + (platform_height - 1 - row))
+			
+			# First row (top) = grass blocks, rest = dirt blocks
+			var block_type = "grass" if row == 0 else "dirt"
+			
+			# Place the block directly (bypass event system for initial setup)
+			if place_block(grid_pos, block_type):
+				pass # Success
+			else:
+				print("WorldGrid: Failed to place %s block at %s" % [block_type, grid_pos])
+	
+	print("WorldGrid: Starting platform created (%dx%d blocks)" % [platform_width, platform_height])
