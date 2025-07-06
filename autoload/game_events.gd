@@ -35,6 +35,11 @@ signal world_cleared()
 signal target_indicator_update_requested(grid_pos: Vector2i, is_valid: bool)
 signal target_indicator_hide_requested()
 
+# Entity events
+signal entity_spawned(entity: Entity)
+signal entity_despawned(entity: Entity)
+signal entity_moved(entity: Entity, old_position: Vector3, new_position: Vector3)
+
 func _ready():
 	print("GameEvents: Event system initialized")
 
@@ -121,3 +126,15 @@ func notify_world_loaded():
 func notify_world_cleared():
 	print("GameEvents: World cleared")
 	world_cleared.emit()
+
+## Entity management events
+func notify_entity_spawned(entity: Entity):
+	print("GameEvents: Entity spawned: %s" % entity.entity_name)
+	entity_spawned.emit(entity)
+
+func notify_entity_despawned(entity: Entity):
+	print("GameEvents: Entity despawned: %s" % entity.entity_name)
+	entity_despawned.emit(entity)
+
+func notify_entity_moved(entity: Entity, old_position: Vector3, new_position: Vector3):
+	entity_moved.emit(entity, old_position, new_position)

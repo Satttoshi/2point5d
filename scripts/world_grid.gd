@@ -116,6 +116,11 @@ func place_block(grid_pos: Vector2i, block_id: String) -> bool:
 		push_warning("WorldGrid: Position already occupied: %s" % grid_pos)
 		return false
 	
+	# Check for entity overlap (players, NPCs, enemies)
+	if _check_entity_overlap(grid_pos):
+		push_warning("WorldGrid: Cannot place block - entity detected at position: %s" % grid_pos)
+		return false
+	
 	# Get block resource
 	var block_resource = BlockRegistry.get_block(block_id)
 	if block_resource == null:
@@ -282,7 +287,11 @@ func update_target_indicator(grid_pos: Vector2i, is_valid: bool):
 				else:
 					_target_indicator.set_color(Color.RED)  # Block exists, can remove
 			else:
-				_target_indicator.set_color(Color.GREEN)  # Empty space, can place
+				# Check for entity overlap for placement
+				if _check_entity_overlap(grid_pos):
+					_target_indicator.set_color(Color.ORANGE)  # Entity blocking placement
+				else:
+					_target_indicator.set_color(Color.GREEN)  # Empty space, can place
 		else:
 			_target_indicator.set_color(Color.GRAY)  # Invalid target
 
@@ -293,6 +302,28 @@ func is_target_indicator_visible() -> bool:
 ## Check if a position is valid for block placement
 func _is_valid_position(grid_pos: Vector2i) -> bool:
 	return abs(grid_pos.x) <= world_bounds and abs(grid_pos.y) <= world_bounds
+
+## Check for entity overlap at a grid position (players, NPCs, enemies)
+func _check_entity_overlap(grid_pos: Vector2i) -> bool:
+	var world_pos: Vector3 = grid_to_world(grid_pos)
+	var space_state = get_world_3d().direct_space_state
+	
+	# Create a query for collision detection
+	var query = PhysicsShapeQueryParameters3D.new()
+	var box_shape = BoxShape3D.new()
+	box_shape.size = Vector3(cell_size * 0.9, cell_size * 0.9, cell_size * 0.9)  # Slightly smaller to avoid edge cases
+	
+	query.shape = box_shape
+	query.transform = Transform3D(Basis(), world_pos)
+	
+	# Check for entities on layers 2 (Player) and 3 (Entities)
+	query.collision_mask = 2 | 4  # Layer 2: Player, Layer 3: Entities (2^1 | 2^2 = 2 | 4)
+	query.exclude = []
+	
+	var collisions = space_state.intersect_shape(query)
+	
+	# Return true if any entities are detected
+	return collisions.size() > 0
 
 ## Create visual representation for a block
 func _create_block_visual(block_instance: BlockInstance) -> bool:
@@ -344,6 +375,10 @@ func _create_block_collision(block_instance: BlockInstance):
 	box_shape.size = Vector3(cell_size, cell_size, cell_size)
 	collision_shape.shape = box_shape
 	static_body.add_child(collision_shape)
+	
+	# Configure collision layers for proper physics interactions
+	static_body.collision_layer = 1  # Layer 1: Static World
+	static_body.collision_mask = 0   # Blocks don't need to detect collisions
 	
 	var world_pos: Vector3 = grid_to_world(block_instance.position)
 	static_body.position = world_pos

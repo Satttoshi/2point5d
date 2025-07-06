@@ -108,6 +108,17 @@ block_hotkey_5={
 ]
 }
 
+[layer_names]
+
+3d_physics/layer_1="Static World"
+3d_physics/layer_2="Player"
+3d_physics/layer_3="Entities"
+3d_physics/layer_4="Items"
+3d_physics/layer_5="Interactive Objects"
+3d_physics/layer_6="Projectiles"
+3d_physics/layer_7="Triggers"
+3d_physics/layer_8="UI/Debug"
+
 [physics]
 
 3d/physics_engine="Jolt Physics"

@@ -84,6 +84,11 @@ var breaking_target_position : Vector2i = Vector2i.ZERO
 
 func _ready() -> void:
 	check_input_mappings()
+	
+	# Configure collision layers for proper physics interactions
+	collision_layer = 2  # Layer 2: Player
+	collision_mask = 1   # Mask 1: Static World (blocks, terrain)
+	
 	# Initialize camera target position
 	camera_target_position = global_position + camera_offset
 	# Setup third-person camera position
@@ -158,6 +163,9 @@ func _physics_process(delta: float) -> void:
 	
 	# Use velocity to actually move
 	move_and_slide()
+	
+	# Enforce physics-based Z-axis constraint after collision resolution
+	_enforce_z_axis_constraint()
 	
 	# Update camera follow (skip in freefly mode)
 	if smooth_camera and not freeflying:
@@ -234,6 +242,30 @@ func enable_freefly():
 func disable_freefly():
 	collider.disabled = false
 	freeflying = false
+
+## Enforce Z-axis constraint using physics-based correction
+## This ensures the player stays on the 2D plane even with external forces
+func _enforce_z_axis_constraint():
+	# Skip constraint in freefly mode
+	if freeflying:
+		return
+	
+	# Force position to Z=0 with physics correction
+	if global_position.z != 0.0:
+		# Use a strong correction force to snap back to Z=0
+		var z_offset = global_position.z
+		global_position.z = 0.0
+		
+		# Also ensure velocity doesn't accumulate in Z direction
+		velocity.z = 0.0
+		
+		# Log significant Z-axis deviations for debugging
+		if abs(z_offset) > 0.01:
+			print("ProtoController: Z-axis constraint applied, corrected offset: %f" % z_offset)
+	
+	# Ensure velocity stays constrained to 2D plane
+	if velocity.z != 0.0:
+		velocity.z = 0.0
 
 
 ## Initialize block interaction system
