@@ -42,6 +42,8 @@ var _walls: Dictionary = {}
 var _wall_container: Node3D
 ## Dictionary caching wall mesh instances [Vector2i position -> Node3D]
 var _wall_mesh_instances: Dictionary = {}
+## Reference to the player for collision checking
+var _player: CharacterBody3D = null
 
 ## Internal class to represent a block instance in the world
 class BlockInstance:
@@ -89,6 +91,9 @@ func _ready():
 	GameEvents.player_standing_on_block.connect(_on_player_standing_on_block)
 	
 	print("WorldGrid: World grid initialized with cell size: %f" % cell_size)
+	
+	# Find player reference for collision checking
+	_find_player_reference()
 	
 	# Create starting platform with pre-placed blocks
 	_create_starting_platform()
@@ -234,6 +239,11 @@ func place_block(grid_pos: Vector2i, block_id: String) -> bool:
 	# Check if position is already occupied for regular blocks only
 	if has_block(grid_pos):
 		push_warning("WorldGrid: Position already occupied by block: %s" % grid_pos)
+		return false
+	
+	# Check if placing this block would intersect with the player
+	if _would_intersect_player(grid_pos):
+		push_warning("WorldGrid: Cannot place block - would intersect with player: %s" % grid_pos)
 		return false
 	
 	# Create block instance
@@ -672,3 +682,35 @@ func _create_starting_platform():
 				print("WorldGrid: Failed to place %s block at %s" % [block_type, grid_pos])
 	
 	print("WorldGrid: Starting platform created (%dx%d blocks)" % [platform_width, platform_height])
+
+## Find and store reference to the player for collision checking
+func _find_player_reference():
+	# Look for ProtoController in the scene tree
+	var proto_controller = get_node("../ProtoController")
+	if proto_controller and proto_controller is CharacterBody3D:
+		_player = proto_controller
+		print("WorldGrid: Found player reference")
+	else:
+		push_warning("WorldGrid: Could not find player reference for collision checking")
+
+## Check if placing a block at the given position would intersect with the player
+func _would_intersect_player(grid_pos: Vector2i) -> bool:
+	if _player == null:
+		return false  # No player reference, allow placement
+	
+	# Convert grid position to world position
+	var block_world_pos = grid_to_world(grid_pos)
+	var player_pos = _player.global_position
+	
+	# Define block bounds (1x1x1 cube)
+	var block_min = block_world_pos - Vector3(0.5, 0.5, 0.5)
+	var block_max = block_world_pos + Vector3(0.5, 0.5, 0.5)
+	
+	# Define player bounds (assume player is roughly 0.6 wide x 1.8 tall x 0.6 deep)
+	var player_min = player_pos - Vector3(0.3, 0.0, 0.3)
+	var player_max = player_pos + Vector3(0.3, 1.8, 0.3)
+	
+	# Check for AABB intersection
+	return (block_min.x < player_max.x and block_max.x > player_min.x and
+			block_min.y < player_max.y and block_max.y > player_min.y and
+			block_min.z < player_max.z and block_max.z > player_min.z)
