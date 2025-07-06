@@ -70,7 +70,7 @@ var player_inventory: Inventory = null
 var current_targeted_block : Vector2i = Vector2i.ZERO
 var has_targeted_block : bool = false
 var selected_block_id : String = "grass"
-var available_blocks : Array[String] = ["grass", "stone", "dirt", "sand", "brick_wall"]
+var available_blocks : Array[String] = ["grass", "stone", "dirt", "sand", "brick_wall", "wood_platform"]
 var current_block_index : int = 0
 ## Camera reference for mouse to world conversion
 var camera: Camera3D = null
@@ -93,6 +93,10 @@ func _ready() -> void:
 	# Setup third-person camera position
 	head.position = camera_offset
 	head.rotation = Vector3(deg_to_rad(-15), 0, 0)
+	
+	# Setup collision layers for platform interaction
+	collision_layer = 1  # Player on layer 1 (bit 0)
+	collision_mask = 1 | 4  # Collide with layer 1 (world/blocks) and layer 3 (platforms)
 	
 	# Get camera reference for mouse targeting
 	camera = head.get_node("Camera3D") if head.has_node("Camera3D") else null
@@ -159,6 +163,12 @@ func _physics_process(delta: float) -> void:
 	else:
 		velocity.x = 0
 		velocity.z = 0
+	
+	# Handle platform drop-through when pressing down
+	_handle_platform_drop_through()
+	
+	# Handle one-way platform collision logic
+	_handle_one_way_platforms()
 	
 	# Use velocity to actually move
 	move_and_slide()
@@ -324,7 +334,7 @@ func handle_block_interaction_input(event: InputEvent):
 		cycle_selected_block(-1)
 	
 	# Hotkey selection
-	for i in range(1, 6):  # Hotkeys 1-5
+	for i in range(1, 7):  # Hotkeys 1-6
 		var action_name = "block_hotkey_%d" % i
 		if Input.is_action_just_pressed(action_name):
 			select_block_by_index(i - 1)
@@ -473,11 +483,12 @@ func cycle_selected_block(direction: int):
 ## Select a block by index in the available blocks array
 func select_block_by_index(index: int):
 	if index < 0 or index >= available_blocks.size():
+		print("ProtoController: Invalid block index %d (available: %d)" % [index, available_blocks.size()])
 		return
 	
 	current_block_index = index
 	selected_block_id = available_blocks[current_block_index]
-	print("ProtoController: Selected block: %s (%d/%d)" % [selected_block_id, current_block_index + 1, available_blocks.size()])
+	print("ProtoController: Selected block: %s (%d/%d) via hotkey %d" % [selected_block_id, current_block_index + 1, available_blocks.size(), index + 1])
 	
 	# Notify via events
 	GameEvents.notify_player_selected_block_changed(selected_block_id, current_block_index)
@@ -547,3 +558,58 @@ func check_input_mappings():
 	if can_freefly and not InputMap.has_action(input_freefly):
 		push_error("Freefly disabled. No InputAction found for input_freefly: " + input_freefly)
 		can_freefly = false
+
+## Track drop-through state to prevent multiple activations
+var is_dropping_through: bool = false
+var drop_through_timer: float = 0.0
+
+## Handle dropping through platforms when down key is pressed
+func _handle_platform_drop_through():
+	# Update drop-through timer
+	if is_dropping_through:
+		drop_through_timer -= get_physics_process_delta_time()
+		if drop_through_timer <= 0.0:
+			# Re-enable platform collision
+			collision_mask |= 4  # Add platform layer back to collision mask
+			is_dropping_through = false
+			print("ProtoController: Re-enabled platform collision")
+		return
+	
+	# Only allow drop-through when player is on the floor and pressing down
+	if not is_on_floor() or freeflying:
+		return
+	
+	# Check if down key is pressed (same key used for freefly down movement)
+	if not Input.is_action_pressed(input_down):
+		return
+	
+	# Start drop-through sequence
+	is_dropping_through = true
+	drop_through_timer = 0.3  # Time before re-enabling collision
+	
+	# Temporarily disable collision with platform layer to allow drop-through
+	# Platform layer is set to 4 (bit 2) in the WorldGrid
+	collision_mask &= ~4  # Remove platform layer from collision mask
+	
+	# Apply a small downward velocity to help drop through
+	velocity.y = -2.0
+	
+	print("ProtoController: Dropped through platform")
+
+## Handle one-way platform collision (allow passing through from below)
+func _handle_one_way_platforms():
+	# Skip if dropping through or in freefly mode
+	if is_dropping_through or freeflying:
+		return
+	
+	# If player is moving upward, allow passing through platforms
+	if velocity.y > 0:
+		# Temporarily disable platform collision when moving up
+		collision_mask &= ~4  # Remove platform layer from collision mask
+		# Re-enable on next frame
+		call_deferred("_re_enable_platform_collision")
+
+## Re-enable platform collision (called deferred)
+func _re_enable_platform_collision():
+	if not is_dropping_through:  # Don't re-enable if actively dropping through
+		collision_mask |= 4  # Add platform layer back to collision mask

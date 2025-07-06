@@ -46,6 +46,14 @@ var _wall_mesh_instances: Dictionary = {}
 var _player: CharacterBody3D = null
 ## Root node for all particle effects
 var _particle_container: Node3D
+## Dictionary storing platform instances [Vector2i position -> PlatformInstance]
+var _platforms: Dictionary = {}
+## Root node for all platform mesh instances
+var _platform_container: Node3D
+## Dictionary caching platform mesh instances [Vector2i position -> Node3D]
+var _platform_mesh_instances: Dictionary = {}
+## Dictionary for platform collision shapes [Vector2i position -> StaticBody3D]
+var _platform_collision_bodies: Dictionary = {}
 
 ## Internal class to represent a block instance in the world
 class BlockInstance:
@@ -74,6 +82,19 @@ class WallInstance:
 		position = pos
 		wall_id = id
 		wall_resource = resource
+
+## Internal class to represent a platform instance in the world (separate from blocks)
+class PlatformInstance:
+	var position: Vector2i
+	var platform_id: String
+	var platform_resource: BlockResource
+	var mesh_instance: Node3D
+	var collision_body: StaticBody3D
+	
+	func _init(pos: Vector2i, id: String, resource: BlockResource):
+		position = pos
+		platform_id = id
+		platform_resource = resource
 
 func _ready():
 	print("WorldGrid: Initializing world grid system...")
@@ -184,6 +205,10 @@ func _setup_container():
 	_particle_container = Node3D.new()
 	_particle_container.name = "ParticleContainer"
 	add_child(_particle_container)
+	
+	_platform_container = Node3D.new()
+	_platform_container.name = "PlatformContainer"
+	add_child(_platform_container)
 
 ## Setup the target indicator for block placement/removal
 func _setup_target_indicator():
@@ -242,6 +267,10 @@ func place_block(grid_pos: Vector2i, block_id: String) -> bool:
 	if block_resource.item_type == BlockResource.ItemType.WALL_ITEM:
 		return _place_wall(grid_pos, block_id, block_resource)
 	
+	# Route platform items to separate platform system
+	if block_resource.item_type == BlockResource.ItemType.PLATFORM:
+		return _place_platform(grid_pos, block_id, block_resource)
+	
 	# Check if position is already occupied for regular blocks only
 	if has_block(grid_pos):
 		push_warning("WorldGrid: Position already occupied by block: %s" % grid_pos)
@@ -251,6 +280,10 @@ func place_block(grid_pos: Vector2i, block_id: String) -> bool:
 	if _would_intersect_player(grid_pos):
 		push_warning("WorldGrid: Cannot place block - would intersect with player: %s" % grid_pos)
 		return false
+	
+	# Check if placing this block would intersect with platforms
+	# Remove any platforms that would be blocked by this block placement
+	_remove_intersecting_platforms(grid_pos)
 	
 	# Create block instance
 	var block_instance = BlockInstance.new(grid_pos, block_id, block_resource)
@@ -273,7 +306,7 @@ func place_block(grid_pos: Vector2i, block_id: String) -> bool:
 	print("WorldGrid: Placed block '%s' at %s" % [block_id, grid_pos])
 	return true
 
-## Remove a block or wall at the specified grid position
+## Remove a block, wall, or platform at the specified grid position
 func remove_block(grid_pos: Vector2i) -> bool:
 	# Try to remove a block first
 	if has_block(grid_pos):
@@ -281,6 +314,9 @@ func remove_block(grid_pos: Vector2i) -> bool:
 	# If no block, try to remove a wall
 	elif has_wall(grid_pos):
 		return _remove_wall(grid_pos)
+	# If no wall, try to remove a platform
+	elif has_platform(grid_pos):
+		return _remove_platform(grid_pos)
 	else:
 		push_warning("WorldGrid: Nothing to remove at position: %s" % grid_pos)
 		return false
@@ -409,19 +445,28 @@ func update_target_indicator(grid_pos: Vector2i, is_valid: bool, selected_block_
 	if _target_indicator:
 		var world_pos = grid_to_world(grid_pos)
 		
-		# Check if selected item is a wall item to change indicator display
+		# Check selected item type to determine indicator display
 		var is_wall_item = false
+		var is_platform_item = false
 		if not selected_block_id.is_empty():
 			var selected_resource = BlockRegistry.get_block(selected_block_id)
-			if selected_resource and selected_resource.item_type == BlockResource.ItemType.WALL_ITEM:
-				is_wall_item = true
-				# Wall items use the same position as blocks - no Z offset
+			if selected_resource:
+				if selected_resource.item_type == BlockResource.ItemType.WALL_ITEM:
+					is_wall_item = true
+				elif selected_resource.item_type == BlockResource.ItemType.PLATFORM:
+					is_platform_item = true
 		
 		# Set appropriate display mode
 		if is_wall_item:
 			_target_indicator.set_display_mode(WireframeCube.DisplayMode.WALL_BACK)
+		elif is_platform_item:
+			_target_indicator.set_display_mode(WireframeCube.DisplayMode.PLATFORM)
 		else:
 			_target_indicator.set_display_mode(WireframeCube.DisplayMode.CUBE)
+		
+		# Adjust position for platform items to show between voxels
+		if is_platform_item:
+			world_pos.y += 0.5  # Move indicator between grid coordinates
 		
 		_target_indicator.global_position = world_pos
 		_target_indicator.visible = is_valid
@@ -432,6 +477,8 @@ func update_target_indicator(grid_pos: Vector2i, is_valid: bool, selected_block_
 				_target_indicator.set_color(Color.RED)  # Block exists, can remove
 			elif has_wall(grid_pos) and is_wall_item:
 				_target_indicator.set_color(Color.ORANGE)  # Wall exists, can replace
+			elif has_platform(grid_pos) and is_platform_item:
+				_target_indicator.set_color(Color.ORANGE)  # Platform exists, can replace
 			else:
 				_target_indicator.set_color(Color.GREEN)  # Empty space, can place
 		else:
@@ -500,6 +547,10 @@ func _create_block_collision(block_instance: BlockInstance):
 	var world_pos = grid_to_world(block_instance.position)
 	static_body.position = world_pos
 	
+	# Set collision layers for block-specific handling
+	static_body.collision_layer = 1  # Layer 1 (bit 0) for regular blocks
+	static_body.collision_mask = 0   # Blocks don't need to detect anything
+	
 	_block_container.add_child(static_body)
 	
 	_collision_bodies[block_instance.position] = static_body
@@ -533,10 +584,11 @@ func _on_block_placement_requested(grid_pos: Vector2i, block_id: String):
 		print("WorldGrid: Invalid position for placement: %s" % grid_pos)
 		return
 	
-	# Check if this is a wall item - if so, allow placement even if block exists
+	# Check if this is a wall item or platform - if so, allow placement with special rules
 	var block_resource = BlockRegistry.get_block(block_id)
-	if block_resource != null and block_resource.item_type == BlockResource.ItemType.WALL_ITEM:
+	if block_resource != null and (block_resource.item_type == BlockResource.ItemType.WALL_ITEM or block_resource.item_type == BlockResource.ItemType.PLATFORM):
 		# Wall items can be placed regardless of existing blocks
+		# Platform items have their own placement validation in _place_platform
 		pass
 	elif has_block(grid_pos):
 		print("WorldGrid: Position already occupied: %s" % grid_pos)
@@ -663,6 +715,174 @@ func clear_walls():
 		_remove_wall(grid_pos)
 	print("WorldGrid: All walls cleared")
 
+## Place a platform at the specified grid position (platform spans between grid_pos and grid_pos+1)
+func _place_platform(grid_pos: Vector2i, platform_id: String, platform_resource: BlockResource) -> bool:
+	print("WorldGrid: Attempting to place platform '%s' between Y=%d and Y=%d at X=%d" % [platform_id, grid_pos.y, grid_pos.y + 1, grid_pos.x])
+	
+	# Platform spans between grid_pos.y and grid_pos.y + 1
+	# Check both adjacent positions - platform is blocked if either coordinate has a block
+	var lower_pos = Vector2i(grid_pos.x, grid_pos.y)      # The coordinate below the platform
+	var upper_pos = Vector2i(grid_pos.x, grid_pos.y + 1)  # The coordinate above the platform
+	
+	print("WorldGrid: Checking lower (%s) has_block: %s, upper (%s) has_block: %s" % [lower_pos, has_block(lower_pos), upper_pos, has_block(upper_pos)])
+	
+	if has_block(lower_pos) or has_block(upper_pos):
+		print("WorldGrid: Cannot place platform - block at adjacent coordinate: %s" % grid_pos)
+		return false
+	
+	# If a platform already exists at this position, replace it
+	if _platforms.has(grid_pos):
+		_remove_platform(grid_pos)
+	
+	# Create platform instance
+	var platform_instance = PlatformInstance.new(grid_pos, platform_id, platform_resource)
+	_platforms[grid_pos] = platform_instance
+	
+	# Create visual representation for platform
+	if not _create_platform_visual(platform_instance):
+		_platforms.erase(grid_pos)
+		push_error("WorldGrid: Failed to create visual for platform: %s" % platform_id)
+		return false
+	
+	print("WorldGrid: Placed platform '%s' at %s" % [platform_id, grid_pos])
+	
+	return true
+
+## Create visual representation for a platform
+func _create_platform_visual(platform_instance: PlatformInstance) -> bool:
+	var platform_resource = platform_instance.platform_resource
+	
+	if platform_resource.mesh_scene == null:
+		push_error("WorldGrid: No mesh scene defined for platform: %s" % platform_instance.platform_id)
+		return false
+	
+	# Instance the mesh scene
+	var mesh_instance = platform_resource.mesh_scene.instantiate()
+	if mesh_instance == null:
+		push_error("WorldGrid: Failed to instantiate mesh scene for platform: %s" % platform_instance.platform_id)
+		return false
+	
+	# Position the platform between grid coordinates (Y + 0.5 to place between voxels)
+	var world_pos = grid_to_world(platform_instance.position)
+	world_pos.y += 0.5 + platform_resource.platform_y_offset  # Place between current and above voxel
+	mesh_instance.position = world_pos
+	
+	# Scale platform to be thin in Y direction
+	var scale_factor = Vector3(1.0, platform_resource.platform_thickness, 1.0)
+	mesh_instance.scale = scale_factor
+	
+	# Add to platform container
+	_platform_container.add_child(mesh_instance)
+	
+	# Create collision for platform if it should have collision
+	if platform_resource.has_collision:
+		_create_platform_collision(platform_instance, world_pos, scale_factor)
+	
+	# Store references
+	_platform_mesh_instances[platform_instance.position] = mesh_instance
+	platform_instance.mesh_instance = mesh_instance
+	
+	return true
+
+## Create collision for a platform (simple collision for now, one-way logic handled in player)
+func _create_platform_collision(platform_instance: PlatformInstance, world_pos: Vector3, scale_factor: Vector3):
+	# Create a standard StaticBody3D for platform collision
+	var static_body = StaticBody3D.new()
+	static_body.name = "PlatformCollision_%s" % platform_instance.position
+	var collision_shape = CollisionShape3D.new()
+	var box_shape = BoxShape3D.new()
+	
+	# Platform collision should match the scaled dimensions
+	box_shape.size = Vector3(
+		cell_size * scale_factor.x,
+		cell_size * scale_factor.y,
+		cell_size * scale_factor.z
+	)
+	
+	collision_shape.shape = box_shape
+	static_body.add_child(collision_shape)
+	
+	# Position collision at the same place as the platform visual
+	static_body.position = world_pos
+	
+	# Set collision layers for platform-specific handling
+	static_body.collision_layer = 4  # Layer 3 (bit 2) for platforms
+	static_body.collision_mask = 0   # Platforms don't need to detect anything
+	
+	# Add to platform container
+	_platform_container.add_child(static_body)
+	
+	# Store references
+	_platform_collision_bodies[platform_instance.position] = static_body
+	platform_instance.collision_body = static_body
+	
+	print("WorldGrid: Created platform collision at %s with size %s" % [world_pos, box_shape.size])
+
+## Remove a platform at the specified grid position
+func _remove_platform(grid_pos: Vector2i) -> bool:
+	if not _platforms.has(grid_pos):
+		return false
+	
+	var platform_instance = _platforms[grid_pos] as PlatformInstance
+	var platform_id = platform_instance.platform_id
+	var platform_resource = platform_instance.platform_resource
+	
+	# Create destruction particles for platform removal
+	_create_destruction_particles(grid_pos, platform_resource)
+	
+	# Remove visual representation
+	if _platform_mesh_instances.has(grid_pos):
+		var mesh_instance = _platform_mesh_instances[grid_pos]
+		if mesh_instance:
+			mesh_instance.queue_free()
+		_platform_mesh_instances.erase(grid_pos)
+	
+	# Remove collision
+	if _platform_collision_bodies.has(grid_pos):
+		var collision_body = _platform_collision_bodies[grid_pos]
+		if collision_body:
+			collision_body.queue_free()
+		_platform_collision_bodies.erase(grid_pos)
+	
+	# Clean up data
+	_platforms.erase(grid_pos)
+	
+	print("WorldGrid: Removed platform '%s' from %s" % [platform_id, grid_pos])
+	return true
+
+## Check if there's a platform at the specified position
+func has_platform(grid_pos: Vector2i) -> bool:
+	return _platforms.has(grid_pos)
+
+## Get the platform instance at the specified position
+func get_platform(grid_pos: Vector2i) -> PlatformInstance:
+	return _platforms.get(grid_pos, null)
+
+## Clear all platforms from the world
+func clear_platforms():
+	for grid_pos in _platforms.keys():
+		_remove_platform(grid_pos)
+	print("WorldGrid: All platforms cleared")
+
+
+## Remove platforms that would be intersected by placing a block at the given position
+func _remove_intersecting_platforms(block_grid_pos: Vector2i):
+	var platforms_to_remove: Array[Vector2i] = []
+	
+	for platform_grid_pos in _platforms.keys():
+		# Platform spans between platform_grid_pos.y and platform_grid_pos.y + 1
+		# It's blocked if a block is placed at either of these positions
+		var platform_lower = Vector2i(platform_grid_pos.x, platform_grid_pos.y)
+		var platform_upper = Vector2i(platform_grid_pos.x, platform_grid_pos.y + 1)
+		
+		if block_grid_pos == platform_lower or block_grid_pos == platform_upper:
+			platforms_to_remove.append(platform_grid_pos)
+			print("WorldGrid: Block placement at %s will remove platform at %s" % [block_grid_pos, platform_grid_pos])
+	
+	# Remove intersecting platforms
+	for platform_pos in platforms_to_remove:
+		_remove_platform(platform_pos)
+
 ## Create the starting platform with pre-placed blocks
 func _create_starting_platform():
 	# Wait for BlockRegistry to be ready
@@ -738,8 +958,10 @@ func _create_destruction_particles(grid_pos: Vector2i, block_resource: BlockReso
 	var particles = GPUParticles3D.new()
 	particles.name = "DestructionParticles_%s" % str(grid_pos)
 	
-	# Position particles at the block center
+	# Position particles at the correct location based on item type
 	var world_pos = grid_to_world(grid_pos)
+	if block_resource != null and block_resource.item_type == BlockResource.ItemType.PLATFORM:
+		world_pos.y += 0.5  # Adjust for platform position between voxels
 	particles.global_position = world_pos
 	
 	# Configure particle system

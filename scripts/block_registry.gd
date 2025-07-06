@@ -316,4 +316,27 @@ func _create_basic_blocks():
 	
 	register_block(brick_wall)
 	
+	# Create wood platform item
+	var wood_platform = DebugBlockResource.create_debug_block(
+		"wood_platform",
+		"Wood Platform",
+		Color(0.6, 0.4, 0.2, 1.0)  # Wood brown color
+	)
+	wood_platform.block_description = "Thin wooden platform that can be placed between coordinates"
+	wood_platform.durability = 60
+	wood_platform.break_time = 1.0
+	wood_platform.category = "Building"
+	wood_platform.tags = ["platform", "wood", "building"]
+	
+	# Configure as platform item
+	wood_platform.item_type = BlockResource.ItemType.PLATFORM
+	wood_platform.platform_thickness = 0.1  # 2/20 of block height
+	wood_platform.platform_y_offset = 0.0  # Centered vertically
+	wood_platform.has_collision = true  # Platforms should have collision for walking on
+	
+	# Regenerate mesh now that item_type is set to PLATFORM
+	wood_platform.regenerate_mesh()
+	
+	register_block(wood_platform)
+	
 	print("BlockRegistry: Created %d debug block types" % _blocks.size())

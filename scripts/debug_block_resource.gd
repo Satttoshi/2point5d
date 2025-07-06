@@ -43,6 +43,12 @@ func _generate_procedural_mesh():
 		
 		# No internal offset - positioning will be handled in WorldGrid
 		# Quad faces forward by default, perfect for back wall
+	elif item_type == ItemType.PLATFORM:
+		# Create thin BoxMesh for platform - scaling will be handled in WorldGrid
+		var platform_mesh = BoxMesh.new()
+		platform_mesh.size = Vector3.ONE  # Start as full cube, WorldGrid will scale it
+		mesh_instance.mesh = platform_mesh
+		mesh_instance.material_override = _create_platform_material()
 	else:
 		# Create BoxMesh for regular blocks
 		var box_mesh = BoxMesh.new()
@@ -176,6 +182,24 @@ func _create_wallpaper_material() -> StandardMaterial3D:
 	# Make it appear completely flat like a painted texture
 	material.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_ALWAYS
 	material.no_depth_test = false
+	
+	return material
+
+## Create material for platform items
+func _create_platform_material() -> StandardMaterial3D:
+	var material = StandardMaterial3D.new()
+	
+	# Ensure we have a valid color, default to brown wood color if not set
+	var final_color = block_color if block_color != Color.TRANSPARENT else Color(0.6, 0.4, 0.2, 1.0)
+	
+	# Create material suitable for platforms
+	material.albedo_color = final_color
+	material.metallic = 0.0
+	material.roughness = 0.8  # Wood-like surface
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_PER_PIXEL
+	material.cull_mode = BaseMaterial3D.CULL_BACK
+	material.flags_transparent = false
+	material.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_ALWAYS
 	
 	return material
 

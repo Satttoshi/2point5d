@@ -7,7 +7,8 @@ extends Resource
 ## Enum defining different item types and their placement behavior
 enum ItemType {
 	BLOCK,      ## Regular 3D blocks that occupy full voxel space
-	WALL_ITEM   ## Flat items placed on voxel faces (paintings, decorations)
+	WALL_ITEM,  ## Flat items placed on voxel faces (paintings, decorations)
+	PLATFORM    ## Thin horizontal platforms placed between grid coordinates
 }
 
 @export var block_id: String = ""
@@ -41,6 +42,12 @@ enum ItemType {
 @export var wall_placement_offset: float = -0.5
 ## Does this item block placement of other items in front of it?
 @export var blocks_placement: bool = true
+
+@export_group("Platform Properties")
+## Thickness of the platform (as fraction of block height, e.g., 0.1 = 2/20 of block height)
+@export var platform_thickness: float = 0.1
+## Y-axis offset for platform placement (0.0 = center, -0.5 = bottom, 0.5 = top)
+@export var platform_y_offset: float = 0.0
 
 @export_group("Degradation Properties")
 ## Does this block degrade over time?

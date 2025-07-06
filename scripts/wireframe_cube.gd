@@ -7,7 +7,8 @@ extends MeshInstance3D
 ## Display mode for different types of indicators
 enum DisplayMode {
 	CUBE,        ## Full wireframe cube for blocks
-	WALL_BACK    ## Flat rectangle at back face for wall items
+	WALL_BACK,   ## Flat rectangle at back face for wall items
+	PLATFORM     ## Horizontal lines showing platform placement between coordinates
 }
 
 @export var cube_size: Vector3 = Vector3.ONE
@@ -35,6 +36,8 @@ func create_wireframe_mesh():
 		_create_cube_wireframe(vertices, indices)
 	elif display_mode == DisplayMode.WALL_BACK:
 		_create_wall_back_wireframe(vertices, indices)
+	elif display_mode == DisplayMode.PLATFORM:
+		_create_platform_wireframe(vertices, indices)
 	
 	arrays[Mesh.ARRAY_VERTEX] = vertices
 	arrays[Mesh.ARRAY_INDEX] = indices
@@ -102,6 +105,36 @@ func _create_wall_back_wireframe(vertices: PackedVector3Array, indices: PackedIn
 		var start_pos = corners[edge[0]]
 		var end_pos = corners[edge[1]]
 		_add_line_tube(vertices, indices, start_pos, end_pos)
+
+## Generate platform wireframe (horizontal lines showing platform placement)
+func _create_platform_wireframe(vertices: PackedVector3Array, indices: PackedInt32Array):
+	# Define platform dimensions - show horizontal lines at the top and bottom of where platform will be placed
+	var half_size = cube_size * 0.5
+	var platform_thickness = 0.1  # 2/20 of block height
+	var half_thickness = platform_thickness * 0.5
+	
+	# Platform spans full X width but is thin in Y
+	var top_y = half_thickness
+	var bottom_y = -half_thickness
+	
+	# Define horizontal lines that show where the platform will be placed
+	var lines = [
+		# Top edges of platform
+		[Vector3(-half_size.x, top_y, -half_size.z), Vector3(half_size.x, top_y, -half_size.z)],  # front top
+		[Vector3(-half_size.x, top_y,  half_size.z), Vector3(half_size.x, top_y,  half_size.z)],  # back top
+		# Bottom edges of platform
+		[Vector3(-half_size.x, bottom_y, -half_size.z), Vector3(half_size.x, bottom_y, -half_size.z)],  # front bottom
+		[Vector3(-half_size.x, bottom_y,  half_size.z), Vector3(half_size.x, bottom_y,  half_size.z)],  # back bottom
+		# Side connectors (short lines on sides)
+		[Vector3(-half_size.x, bottom_y, -half_size.z), Vector3(-half_size.x, top_y, -half_size.z)],  # left front
+		[Vector3( half_size.x, bottom_y, -half_size.z), Vector3( half_size.x, top_y, -half_size.z)],  # right front
+		[Vector3(-half_size.x, bottom_y,  half_size.z), Vector3(-half_size.x, top_y,  half_size.z)],  # left back
+		[Vector3( half_size.x, bottom_y,  half_size.z), Vector3( half_size.x, top_y,  half_size.z)]   # right back
+	]
+	
+	# Create tube geometry for each line
+	for line in lines:
+		_add_line_tube(vertices, indices, line[0], line[1])
 
 ## Set the display mode and regenerate mesh
 func set_display_mode(mode: DisplayMode):
