@@ -31,7 +31,7 @@ extends CharacterBody3D
 ## Minimum distance before camera starts following.
 @export var camera_deadzone : float = 0.3
 ## Camera offset from player position.
-@export var camera_offset : Vector3 = Vector3(0, 2, 5)
+@export var camera_offset : Vector3 = Vector3(0, 4, 10)
 ## Enable smooth camera following.
 @export var smooth_camera : bool = true
 ## Bezier curve easing strength (0.0 = linear, 1.0 = strong curve).
