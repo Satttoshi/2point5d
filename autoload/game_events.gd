@@ -7,6 +7,8 @@ extends Node
 # Block-related events
 signal block_placement_requested(grid_pos: Vector2i, block_id: String)
 signal block_removal_requested(grid_pos: Vector2i)
+signal block_breaking_start_requested(grid_pos: Vector2i)
+signal block_breaking_stop_requested(grid_pos: Vector2i)
 signal block_placed(grid_pos: Vector2i, block_id: String)
 signal block_removed(grid_pos: Vector2i, block_id: String)
 
@@ -45,6 +47,16 @@ func request_block_placement(grid_pos: Vector2i, block_id: String):
 func request_block_removal(grid_pos: Vector2i):
 	print("GameEvents: Block removal requested at %s" % grid_pos)
 	block_removal_requested.emit(grid_pos)
+
+## Request block breaking start at specified position
+func request_block_breaking_start(grid_pos: Vector2i):
+	print("GameEvents: Block breaking start requested at %s" % grid_pos)
+	block_breaking_start_requested.emit(grid_pos)
+
+## Request block breaking stop at specified position
+func request_block_breaking_stop(grid_pos: Vector2i):
+	print("GameEvents: Block breaking stop requested at %s" % grid_pos)
+	block_breaking_stop_requested.emit(grid_pos)
 
 ## Notify that a block was successfully placed
 func notify_block_placed(grid_pos: Vector2i, block_id: String):

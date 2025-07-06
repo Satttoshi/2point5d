@@ -28,6 +28,8 @@ var _mesh_instances: Dictionary = {}
 var _collision_bodies: Dictionary = {}
 ## Target indicator for block placement/removal
 var _target_indicator: WireframeCube = null
+## Dictionary storing active breaking data [Vector2i position -> BlockBreakingData]
+var _breaking_blocks: Dictionary = {}
 
 ## Internal class to represent a block instance in the world
 class BlockInstance:
@@ -58,10 +60,16 @@ func _ready():
 	# Connect to GameEvents for event-driven communication
 	GameEvents.block_placement_requested.connect(_on_block_placement_requested)
 	GameEvents.block_removal_requested.connect(_on_block_removal_requested)
+	GameEvents.block_breaking_start_requested.connect(_on_block_breaking_start_requested)
+	GameEvents.block_breaking_stop_requested.connect(_on_block_breaking_stop_requested)
 	GameEvents.target_indicator_update_requested.connect(_on_target_indicator_update_requested)
 	GameEvents.target_indicator_hide_requested.connect(_on_target_indicator_hide_requested)
 	
 	print("WorldGrid: World grid initialized with cell size: %f" % cell_size)
+
+func _process(delta: float):
+	# Update breaking blocks
+	_update_breaking_blocks(delta)
 
 ## Setup the container node for all block instances
 func _setup_container():
@@ -145,8 +153,8 @@ func remove_block(grid_pos: Vector2i) -> bool:
 		push_warning("WorldGrid: No block to remove at position: %s" % grid_pos)
 		return false
 	
-	var block_instance = _blocks[grid_pos] as BlockInstance
-	var block_id = block_instance.block_id
+	var block_instance: BlockInstance = _blocks[grid_pos] as BlockInstance
+	var block_id: String = block_instance.block_id
 	
 	# Remove visual representation
 	_remove_block_visual(grid_pos)
@@ -167,7 +175,7 @@ func damage_block(grid_pos: Vector2i, damage: int) -> bool:
 	if not has_block(grid_pos):
 		return false
 	
-	var block_instance = _blocks[grid_pos] as BlockInstance
+	var block_instance: BlockInstance = _blocks[grid_pos] as BlockInstance
 	if not block_instance.block_resource.breakable:
 		return false
 	
@@ -195,12 +203,12 @@ func get_block(grid_pos: Vector2i) -> BlockInstance:
 
 ## Get the block ID at the specified position
 func get_block_id(grid_pos: Vector2i) -> String:
-	var block_instance = get_block(grid_pos)
+	var block_instance: BlockInstance = get_block(grid_pos)
 	return block_instance.block_id if block_instance else ""
 
 ## Get the block resource at the specified position
 func get_block_resource(grid_pos: Vector2i) -> BlockResource:
-	var block_instance = get_block(grid_pos)
+	var block_instance: BlockInstance = get_block(grid_pos)
 	return block_instance.block_resource if block_instance else null
 
 ## Get the current health of a block
@@ -220,7 +228,7 @@ func get_blocks_in_area(top_left: Vector2i, bottom_right: Vector2i) -> Array[Blo
 	
 	for x in range(top_left.x, bottom_right.x + 1):
 		for y in range(top_left.y, bottom_right.y + 1):
-			var pos = Vector2i(x, y)
+			var pos: Vector2i = Vector2i(x, y)
 			if has_block(pos):
 				blocks.append(get_block(pos))
 	
@@ -240,7 +248,7 @@ func get_block_count() -> int:
 ## Show target indicator at specified grid position
 func show_target_indicator(grid_pos: Vector2i):
 	if _target_indicator:
-		var world_pos = grid_to_world(grid_pos)
+		var world_pos: Vector3 = grid_to_world(grid_pos)
 		_target_indicator.global_position = world_pos
 		_target_indicator.visible = true
 
@@ -252,14 +260,27 @@ func hide_target_indicator():
 ## Update target indicator position and visibility based on validity
 func update_target_indicator(grid_pos: Vector2i, is_valid: bool):
 	if _target_indicator:
-		var world_pos = grid_to_world(grid_pos)
+		var world_pos: Vector3 = grid_to_world(grid_pos)
 		_target_indicator.global_position = world_pos
 		_target_indicator.visible = is_valid
 		
-		# Change color based on validity (green for valid placement, red for invalid)
+		# Change color based on validity and breaking status
 		if is_valid:
 			if has_block(grid_pos):
-				_target_indicator.set_color(Color.RED)  # Block exists, can remove
+				if is_block_breaking(grid_pos):
+					# Show breaking progress with color change
+					var breaking_stage: int = get_block_breaking_stage(grid_pos)
+					var breaking_colors: Array[Variant] = [
+						Color.RED,           # Stage 0: initial breaking
+						Color.ORANGE_RED,    # Stage 1: light damage
+						Color.ORANGE,        # Stage 2: medium damage
+						Color.YELLOW,        # Stage 3: heavy damage
+						Color.WHITE          # Stage 4: about to break
+					]
+					var stage_index = clamp(breaking_stage, 0, breaking_colors.size() - 1)
+					_target_indicator.set_color(breaking_colors[stage_index])
+				else:
+					_target_indicator.set_color(Color.RED)  # Block exists, can remove
 			else:
 				_target_indicator.set_color(Color.GREEN)  # Empty space, can place
 		else:
@@ -275,7 +296,7 @@ func _is_valid_position(grid_pos: Vector2i) -> bool:
 
 ## Create visual representation for a block
 func _create_block_visual(block_instance: BlockInstance) -> bool:
-	var block_resource = block_instance.block_resource
+	var block_resource: BlockResource = block_instance.block_resource
 	
 	
 	if block_resource.mesh_scene == null:
@@ -284,14 +305,14 @@ func _create_block_visual(block_instance: BlockInstance) -> bool:
 	
 	
 	# Instance the mesh scene
-	var mesh_instance = block_resource.mesh_scene.instantiate()
+	var mesh_instance: Node = block_resource.mesh_scene.instantiate()
 	if mesh_instance == null:
 		push_error("WorldGrid: Failed to instantiate mesh scene for block: %s" % block_instance.block_id)
 		return false
 	
 	
 	# Position the mesh instance
-	var world_pos = grid_to_world(block_instance.position)
+	var world_pos: Vector3 = grid_to_world(block_instance.position)
 	mesh_instance.position = world_pos
 	
 	
@@ -324,7 +345,7 @@ func _create_block_collision(block_instance: BlockInstance):
 	collision_shape.shape = box_shape
 	static_body.add_child(collision_shape)
 	
-	var world_pos = grid_to_world(block_instance.position)
+	var world_pos: Vector3 = grid_to_world(block_instance.position)
 	static_body.position = world_pos
 	
 	_block_container.add_child(static_body)
@@ -352,7 +373,7 @@ func _on_block_unregistered(block_id: String):
 	# This would be needed for mod support or dynamic block type changes
 
 ## Handle block placement requests from events
-func _on_block_placement_requested(grid_pos: Vector2i, block_id: String):
+func _on_block_placement_requested(grid_pos: Vector2i, block_id: String) -> void:
 	print("WorldGrid: Received block placement request at %s: %s" % [grid_pos, block_id])
 	
 	# Validate placement
@@ -371,14 +392,14 @@ func _on_block_placement_requested(grid_pos: Vector2i, block_id: String):
 		print("WorldGrid: Failed to place block at %s" % grid_pos)
 
 ## Handle block removal requests from events
-func _on_block_removal_requested(grid_pos: Vector2i):
+func _on_block_removal_requested(grid_pos: Vector2i) -> void:
 	print("WorldGrid: Received block removal request at %s" % grid_pos)
 	
 	if not has_block(grid_pos):
 		print("WorldGrid: No block to remove at %s" % grid_pos)
 		return
 	
-	var block_id = get_block_id(grid_pos)
+	var block_id: String = get_block_id(grid_pos)
 	
 	# Attempt to remove the block
 	if remove_block(grid_pos):
@@ -393,6 +414,117 @@ func _on_target_indicator_update_requested(grid_pos: Vector2i, is_valid: bool):
 ## Handle target indicator hide requests from events
 func _on_target_indicator_hide_requested():
 	hide_target_indicator()
+
+## Handle block breaking start requests from events
+func _on_block_breaking_start_requested(grid_pos: Vector2i):
+	print("WorldGrid: Received block breaking start request at %s" % grid_pos)
+	start_block_breaking(grid_pos)
+
+## Handle block breaking stop requests from events  
+func _on_block_breaking_stop_requested(grid_pos: Vector2i):
+	print("WorldGrid: Received block breaking stop request at %s" % grid_pos)
+	stop_block_breaking(grid_pos)
+
+## Start breaking process for a block
+func start_block_breaking(grid_pos: Vector2i):
+	if not has_block(grid_pos):
+		print("WorldGrid: No block to break at %s" % grid_pos)
+		return
+	
+	var block_resource: BlockResource = get_block_resource(grid_pos)
+	if not block_resource.breakable:
+		print("WorldGrid: Block at %s is not breakable" % grid_pos)
+		return
+	
+	# Create breaking data
+	var breaking_data = BlockBreakingData.new(grid_pos, block_resource.block_id, block_resource.break_time)
+	breaking_data.start_breaking()
+	_breaking_blocks[grid_pos] = breaking_data
+	
+	# Notify that breaking has started
+	GameEvents.notify_block_break_started(grid_pos, block_resource.break_time)
+	
+	print("WorldGrid: Started breaking block at %s (%.1fs)" % [grid_pos, block_resource.break_time])
+
+## Stop breaking process for a block
+func stop_block_breaking(grid_pos: Vector2i) -> void:
+	if not _breaking_blocks.has(grid_pos):
+		return
+	
+	var breaking_data: BlockBreakingData = _breaking_blocks[grid_pos] as BlockBreakingData
+	breaking_data.cancel_breaking()
+	_breaking_blocks.erase(grid_pos)
+	
+	# Reset visual damage
+	_update_block_damage_visual(grid_pos, 0)
+	
+	# Notify that breaking was cancelled
+	GameEvents.notify_block_break_cancelled(grid_pos)
+	
+	print("WorldGrid: Stopped breaking block at %s" % grid_pos)
+
+## Update all breaking blocks
+func _update_breaking_blocks(delta: float):
+	var blocks_to_remove: Array[Vector2i] = []
+	
+	for grid_pos in _breaking_blocks.keys():
+		var breaking_data: BlockBreakingData = _breaking_blocks[grid_pos] as BlockBreakingData
+		
+		if breaking_data.update_breaking(delta):
+			# Block should be destroyed
+			blocks_to_remove.append(grid_pos)
+			
+			# Remove the block and notify
+			var block_id: String = get_block_id(grid_pos)
+			if remove_block(grid_pos):
+				GameEvents.notify_block_removed(grid_pos, block_id)
+				GameEvents.notify_block_break_completed(grid_pos, block_id)
+		else:
+			# Update visual damage on the block
+			_update_block_damage_visual(grid_pos, breaking_data.get_break_stage())
+	
+	# Clean up completed breaking data
+	for grid_pos in blocks_to_remove:
+		_breaking_blocks.erase(grid_pos)
+
+## Check if a block is currently being broken
+func is_block_breaking(grid_pos: Vector2i) -> bool:
+	return _breaking_blocks.has(grid_pos)
+
+## Get breaking progress for a block (0.0 to 1.0)
+func get_block_breaking_progress(grid_pos: Vector2i) -> float:
+	if not _breaking_blocks.has(grid_pos):
+		return 0.0
+	
+	var breaking_data: BlockBreakingData = _breaking_blocks[grid_pos] as BlockBreakingData
+	return breaking_data.get_progress_percent()
+
+## Get breaking stage for a block (0-4)
+func get_block_breaking_stage(grid_pos: Vector2i) -> int:
+	if not _breaking_blocks.has(grid_pos):
+		return 0
+	
+	var breaking_data: BlockBreakingData = _breaking_blocks[grid_pos] as BlockBreakingData
+	return breaking_data.get_break_stage()
+
+## Update visual damage on a block based on breaking stage
+func _update_block_damage_visual(grid_pos: Vector2i, damage_stage: int) -> void:
+	if not _mesh_instances.has(grid_pos):
+		return
+	
+	var mesh_instance = _mesh_instances[grid_pos]
+	if not mesh_instance:
+		return
+	
+	var block_instance: BlockInstance = get_block(grid_pos)
+	if not block_instance or not block_instance.block_resource:
+		return
+	
+	# For debug blocks, use the damage stage material
+	if block_instance.block_resource is DebugBlockResource:
+		var debug_block: DebugBlockResource = block_instance.block_resource as DebugBlockResource
+		var damage_material: StandardMaterial3D = debug_block.get_damage_stage_material(damage_stage)
+		mesh_instance.material_override = damage_material
 
 ## Debug function to visualize the grid
 func _draw_debug_grid():

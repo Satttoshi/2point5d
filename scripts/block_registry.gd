@@ -6,7 +6,6 @@ extends Node
 
 signal block_registered(block_resource: BlockResource)
 signal block_unregistered(block_id: String)
-
 ## Dictionary storing all registered block types [block_id -> BlockResource]
 var _blocks: Dictionary = {}
 ## Array of block IDs organized by category for quick filtering
@@ -25,18 +24,18 @@ func register_block(block_resource: BlockResource) -> bool:
 	if block_resource == null:
 		push_error("BlockRegistry: Cannot register null block resource")
 		return false
-	
+
 	if not block_resource.is_valid():
 		push_error("BlockRegistry: Block resource failed validation: %s" % block_resource.block_id)
 		return false
-	
+
 	if _blocks.has(block_resource.block_id):
 		push_warning("BlockRegistry: Overwriting existing block: %s" % block_resource.block_id)
-	
+
 	_blocks[block_resource.block_id] = block_resource
 	_add_to_category(block_resource)
 	_invalidate_cache(block_resource.block_id)
-	
+
 	block_registered.emit(block_resource)
 	print("BlockRegistry: Registered block '%s' (%s)" % [block_resource.block_name, block_resource.block_id])
 	return true
@@ -46,12 +45,12 @@ func unregister_block(block_id: String) -> bool:
 	if not _blocks.has(block_id):
 		push_warning("BlockRegistry: Attempted to unregister non-existent block: %s" % block_id)
 		return false
-	
+
 	var block_resource = _blocks[block_id]
 	_remove_from_category(block_resource)
 	_blocks.erase(block_id)
 	_invalidate_cache(block_id)
-	
+
 	block_unregistered.emit(block_id)
 	print("BlockRegistry: Unregistered block: %s" % block_id)
 	return true
@@ -78,12 +77,12 @@ func get_all_blocks() -> Array[BlockResource]:
 func get_blocks_by_category(category: String) -> Array[BlockResource]:
 	var blocks: Array[BlockResource] = []
 	var block_ids = _blocks_by_category.get(category, [])
-	
+
 	for block_id in block_ids:
-		var block_resource = get_block(block_id)
+		var block_resource: BlockResource = get_block(block_id)
 		if block_resource != null:
 			blocks.append(block_resource)
-	
+
 	return blocks
 
 ## Get all available categories
@@ -120,25 +119,25 @@ func get_craftable_blocks() -> Array[BlockResource]:
 ## Search for blocks by name or tag
 func search_blocks(query: String) -> Array[BlockResource]:
 	var results: Array[BlockResource] = []
-	var query_lower = query.to_lower()
-	
+	var query_lower: String           = query.to_lower()
+
 	for block_resource in _blocks.values():
 		# Search in name
 		if block_resource.block_name.to_lower().contains(query_lower):
 			results.append(block_resource)
 			continue
-		
+
 		# Search in description
 		if block_resource.block_description.to_lower().contains(query_lower):
 			results.append(block_resource)
 			continue
-		
+
 		# Search in tags
 		for tag in block_resource.tags:
 			if tag.to_lower().contains(query_lower):
 				results.append(block_resource)
 				break
-	
+
 	return results
 
 ## Check if a block type exists
@@ -151,7 +150,7 @@ func get_block_count() -> int:
 
 ## Validate all registered blocks
 func validate_all_blocks() -> bool:
-	var all_valid = true
+	var all_valid: bool = true
 	for block_resource in _blocks.values():
 		if not block_resource.is_valid():
 			push_error("BlockRegistry: Invalid block found: %s" % block_resource.block_id)
@@ -173,21 +172,21 @@ func reload_blocks():
 
 ## Add block to category tracking
 func _add_to_category(block_resource: BlockResource):
-	var category = block_resource.category
+	var category: String = block_resource.category
 	if not _blocks_by_category.has(category):
 		_blocks_by_category[category] = []
-	
+
 	var category_blocks = _blocks_by_category[category]
 	if not category_blocks.has(block_resource.block_id):
 		category_blocks.append(block_resource.block_id)
 
 ## Remove block from category tracking
 func _remove_from_category(block_resource: BlockResource):
-	var category = block_resource.category
+	var category: String = block_resource.category
 	if _blocks_by_category.has(category):
 		var category_blocks = _blocks_by_category[category]
 		category_blocks.erase(block_resource.block_id)
-		
+
 		# Remove empty categories
 		if category_blocks.is_empty():
 			_blocks_by_category.erase(category)
@@ -200,9 +199,9 @@ func _invalidate_cache(block_id: String):
 func _load_default_blocks():
 	# First, let's check if we have existing block resources in the project
 	# If not, we'll create some basic ones programmatically
-	
+
 	# Try to load existing block resources
-	var resource_dir = "res://resources/blocks/"
+	var resource_dir: String = "res://resources/blocks/"
 	if DirAccess.open(resource_dir) != null:
 		_load_blocks_from_directory(resource_dir)
 	else:
@@ -210,18 +209,18 @@ func _load_default_blocks():
 		_create_basic_blocks()
 
 ## Load block resources from a directory
-func _load_blocks_from_directory(dir_path: String):
-	var dir = DirAccess.open(dir_path)
+func _load_blocks_from_directory(dir_path: String) -> void:
+	var dir: DirAccess = DirAccess.open(dir_path)
 	if dir == null:
 		return
-	
+
 	dir.list_dir_begin()
-	var file_name = dir.get_next()
-	
+	var file_name: String = dir.get_next()
+
 	while file_name != "":
 		if file_name.ends_with(".tres") or file_name.ends_with(".res"):
-			var resource_path = dir_path + file_name
-			var block_resource = load(resource_path) as BlockResource
+			var resource_path: String         = dir_path + file_name
+			var block_resource: BlockResource = load(resource_path) as BlockResource
 			if block_resource != null:
 				register_block(block_resource)
 		file_name = dir.get_next()
@@ -229,9 +228,9 @@ func _load_blocks_from_directory(dir_path: String):
 ## Create basic block types for initial setup using debug blocks
 func _create_basic_blocks():
 	print("BlockRegistry: Creating basic debug block types...")
-	
+
 	# Create basic grass block using debug block resource
-	var grass_block = DebugBlockResource.create_debug_block(
+	var grass_block: DebugBlockResource = DebugBlockResource.create_debug_block(
 		"grass",
 		"Grass Block",
 		Color.GREEN
@@ -241,11 +240,11 @@ func _create_basic_blocks():
 	grass_block.break_time = 1.0
 	grass_block.category = "Natural"
 	grass_block.tags = ["grass", "natural", "platform"]
-	
+
 	register_block(grass_block)
-	
+
 	# Create basic stone block using debug block resource
-	var stone_block = DebugBlockResource.create_debug_block(
+	var stone_block: DebugBlockResource = DebugBlockResource.create_debug_block(
 		"stone",
 		"Stone Block",
 		Color.GRAY
@@ -255,11 +254,11 @@ func _create_basic_blocks():
 	stone_block.break_time = 2.0
 	stone_block.category = "Natural"
 	stone_block.tags = ["stone", "natural", "durable"]
-	
+
 	register_block(stone_block)
-	
+
 	# Create dirt block for variety
-	var dirt_block = DebugBlockResource.create_debug_block(
+	var dirt_block: DebugBlockResource = DebugBlockResource.create_debug_block(
 		"dirt",
 		"Dirt Block",
 		Color.SADDLE_BROWN

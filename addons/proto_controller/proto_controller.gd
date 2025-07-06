@@ -70,10 +70,13 @@ var player_inventory: Inventory = null
 var current_targeted_block : Vector2i = Vector2i.ZERO
 var has_targeted_block : bool = false
 var selected_block_id : String = "grass"
-var available_blocks : Array[String] = ["grass", "stone", "dirt"]
+var available_blocks : Array[String] = ["grass", "stone", "dirt", "snow"]
 var current_block_index : int = 0
 ## Camera reference for mouse to world conversion
 var camera: Camera3D = null
+## Block breaking state
+var is_breaking_block : bool = false
+var breaking_target_position : Vector2i = Vector2i.ZERO
 
 ## IMPORTANT REFERENCES
 @onready var head: Node3D = $Head
@@ -167,26 +170,26 @@ func _physics_process(delta: float) -> void:
 
 func update_camera_follow(delta: float):
 	# Calculate desired camera position
-	var desired_position = global_position + camera_offset
+	var desired_position: Vector3 = global_position + camera_offset
 	
 	# Calculate distance from current camera target to desired position
-	var distance = camera_target_position.distance_to(desired_position)
+	var distance: float = camera_target_position.distance_to(desired_position)
 	
 	# Only move camera if outside deadzone
 	if distance > camera_deadzone:
 		# Calculate the direction vector
-		var direction = (desired_position - camera_target_position).normalized()
+		var direction: Vector3 = (desired_position - camera_target_position).normalized()
 		
 		# Apply bezier curve smoothing using custom easing
-		var distance_factor = distance / (distance + camera_deadzone)
-		var speed_factor = camera_follow_speed * delta
+		var distance_factor: float = distance / (distance + camera_deadzone)
+		var speed_factor: float = camera_follow_speed * delta
 		
 		# Create bezier-like curve with acceleration and deceleration
 		var t = clamp(speed_factor, 0.0, 1.0)
-		var bezier_factor = bezier_ease(t, camera_easing_strength, camera_acceleration_curve, camera_deceleration_curve)
+		var bezier_factor: float = bezier_ease(t, camera_easing_strength, camera_acceleration_curve, camera_deceleration_curve)
 		
 		# Update camera velocity with smooth acceleration/deceleration
-		var target_velocity = direction * distance * camera_follow_speed * bezier_factor
+		var target_velocity: Vector3 = direction * distance * camera_follow_speed * bezier_factor
 		camera_velocity = camera_velocity.lerp(target_velocity, 0.1)
 		
 		# Apply velocity to camera position
@@ -210,11 +213,11 @@ func bezier_ease(t: float, strength: float, accel_curve: float, decel_curve: flo
 	t = clamp(t, 0.0, 1.0)
 	
 	# Create control points for bezier curve
-	var p1 = 0.0 + (strength * 0.3) / accel_curve
-	var p2 = 1.0 - (strength * 0.3) / decel_curve
+	var p1: float = 0.0 + (strength * 0.3) / accel_curve
+	var p2: float = 1.0 - (strength * 0.3) / decel_curve
 	
 	# Cubic bezier calculation with custom control points
-	var u = 1.0 - t
+	var u: float = 1.0 - t
 	var result = u * u * u * 0.0 + 3.0 * u * u * t * p1 + 3.0 * u * t * t * p2 + t * t * t * 1.0
 	
 	# Apply additional smoothing based on easing strength
@@ -298,9 +301,11 @@ func handle_block_interaction_input(event: InputEvent):
 	if Input.is_action_just_pressed("place_block"):
 		request_block_placement()
 	
-	# Block removal
+	# Block removal - start/stop breaking
 	if Input.is_action_just_pressed("remove_block"):
-		request_block_removal()
+		start_block_breaking()
+	elif Input.is_action_just_released("remove_block"):
+		stop_block_breaking()
 	
 	# Block selection
 	if Input.is_action_just_pressed("block_selector_next"):
@@ -336,12 +341,20 @@ func update_block_targeting():
 	var distance_to_target = global_position.distance_to(target_world_pos)
 	
 	if distance_to_target <= block_interaction_range:
+		# Check if target changed while breaking
+		if is_breaking_block and breaking_target_position != grid_target:
+			stop_block_breaking()
+		
 		current_targeted_block = grid_target
 		has_targeted_block = true
 		
 		# Update WorldGrid's target indicator
 		world_grid.update_target_indicator(grid_target, true)
 	else:
+		# Cancel breaking if target is lost
+		if is_breaking_block:
+			stop_block_breaking()
+		
 		has_targeted_block = false
 		
 		# Hide WorldGrid's target indicator
@@ -369,7 +382,38 @@ func request_block_placement():
 	# Request placement via event system
 	GameEvents.request_block_placement(current_targeted_block, selected_block_id)
 
-## Request block removal at the currently targeted position
+## Start breaking block at the currently targeted position
+func start_block_breaking():
+	if not has_targeted_block:
+		return
+	
+	# Check if there's actually a block to break
+	if not world_grid.has_block(current_targeted_block):
+		return
+	
+	# Start breaking process
+	is_breaking_block = true
+	breaking_target_position = current_targeted_block
+	
+	# Request breaking start via event system
+	GameEvents.request_block_breaking_start(current_targeted_block)
+	print("ProtoController: Started breaking block at %s" % current_targeted_block)
+
+## Stop breaking block (cancels the breaking process)
+func stop_block_breaking():
+	if not is_breaking_block:
+		return
+	
+	# Stop breaking process
+	is_breaking_block = false
+	
+	# Request breaking stop via event system
+	GameEvents.request_block_breaking_stop(breaking_target_position)
+	print("ProtoController: Stopped breaking block at %s" % breaking_target_position)
+	
+	breaking_target_position = Vector2i.ZERO
+
+## Request block removal at the currently targeted position (kept for compatibility)
 func request_block_removal():
 	if not has_targeted_block:
 		return
