@@ -28,6 +28,18 @@ extends Resource
 ## Does this block have collision?
 @export var has_collision: bool = true
 
+@export_group("Degradation Properties")
+## Does this block degrade over time?
+@export var degradable: bool = false
+## How much health this block loses per degradation ticknow please
+@export var degradation_amount: int = 1
+## How often this block degrades (in seconds)
+@export var degradation_interval: float = 1.0
+## Does this block degrade faster when a player is standing on it?
+@export var degrades_under_player: bool = false
+## Multiplier for degradation rate when player is standing on block
+@export var player_degradation_multiplier: float = 1.0
+
 @export_group("Item Drops")
 ## Items that drop when this block is destroyed
 @export var drop_items: Array[BlockResource] = []
@@ -94,6 +106,11 @@ func get_formatted_description() -> String:
 	desc += "\n\nDurability: %d" % durability
 	desc += "\nBreak Time: %.1fs" % break_time
 	desc += "\nCategory: %s" % category
+	
+	if degradable:
+		desc += "\n\nDegradation: %d damage every %.1fs" % [degradation_amount, degradation_interval]
+		if degrades_under_player:
+			desc += "\nDegrades %.1fx faster when stepped on" % player_degradation_multiplier
 	
 	if drop_items.size() > 0:
 		desc += "\n\nDrops:"

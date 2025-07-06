@@ -28,6 +28,14 @@ var _mesh_instances: Dictionary = {}
 var _collision_bodies: Dictionary = {}
 ## Target indicator for block placement/removal
 var _target_indicator: WireframeCube = null
+## Dictionary tracking degradation timers [Vector2i position -> float]
+var _degradation_timers: Dictionary = {}
+## Dictionary tracking blocks that have player standing on them [Vector2i position -> bool]
+var _blocks_with_player: Dictionary = {}
+## Degradation processing timer
+var _degradation_process_timer: float = 0.0
+## How often to process degradation checks (in seconds)
+var _degradation_check_interval: float = 0.1
 
 ## Internal class to represent a block instance in the world
 class BlockInstance:
@@ -60,8 +68,80 @@ func _ready():
 	GameEvents.block_removal_requested.connect(_on_block_removal_requested)
 	GameEvents.target_indicator_update_requested.connect(_on_target_indicator_update_requested)
 	GameEvents.target_indicator_hide_requested.connect(_on_target_indicator_hide_requested)
+	GameEvents.player_standing_on_block.connect(_on_player_standing_on_block)
 	
 	print("WorldGrid: World grid initialized with cell size: %f" % cell_size)
+
+## Process degradation for degradable blocks
+func _process(delta: float):
+	_degradation_process_timer += delta
+	
+	# Process degradation at regular intervals
+	if _degradation_process_timer >= _degradation_check_interval:
+		_process_block_degradation(_degradation_process_timer)
+		_degradation_process_timer = 0.0
+
+## Process degradation for all degradable blocks
+func _process_block_degradation(delta: float):
+	var positions_to_remove: Array[Vector2i] = []
+	
+	for grid_pos in _blocks.keys():
+		var block_instance = _blocks[grid_pos] as BlockInstance
+		if block_instance == null:
+			continue
+			
+		var block_resource = block_instance.block_resource
+		
+		# Only process degradable blocks that have a player standing on them
+		if not block_resource.degradable:
+			continue
+		
+		# Only degrade if player is standing on this block and it degrades under player
+		var player_standing = _blocks_with_player.get(grid_pos, false)
+		if not (player_standing and block_resource.degrades_under_player):
+			continue
+		
+		# Initialize degradation timer if not exists
+		if not _degradation_timers.has(grid_pos):
+			_degradation_timers[grid_pos] = 0.0
+		
+		# Increment degradation timer only when player is standing on it
+		_degradation_timers[grid_pos] += delta
+		
+		# Check if it's time to degrade this block
+		var interval = block_resource.degradation_interval
+		
+		# Apply player multiplier if configured
+		if block_resource.player_degradation_multiplier != 1.0:
+			interval = interval / block_resource.player_degradation_multiplier
+		
+		if _degradation_timers[grid_pos] >= interval:
+			_degradation_timers[grid_pos] = 0.0
+			
+			# Apply degradation damage
+			var damage = block_resource.degradation_amount
+			print("WorldGrid: Sand block at %s taking %d damage from player standing on it" % [grid_pos, damage])
+			if damage_block(grid_pos, damage):
+				# Block was destroyed, clean up degradation data
+				positions_to_remove.append(grid_pos)
+	
+	# Clean up degradation data for removed blocks
+	for grid_pos in positions_to_remove:
+		_degradation_timers.erase(grid_pos)
+		_blocks_with_player.erase(grid_pos)
+
+## Handle player standing on block events
+func _on_player_standing_on_block(grid_pos: Vector2i):
+	# Clear all previous player positions
+	for pos in _blocks_with_player.keys():
+		_blocks_with_player[pos] = false
+	
+	# If this is a valid grid position, set current player position
+	if grid_pos.x != -9999 and grid_pos.y != -9999:  # Check for invalid position (player not on any block)
+		_blocks_with_player[grid_pos] = true
+		print("WorldGrid: Player now standing on block at %s" % grid_pos)
+	else:
+		print("WorldGrid: Player no longer standing on any block")
 
 ## Setup the container node for all block instances
 func _setup_container():
@@ -158,6 +238,10 @@ func remove_block(grid_pos: Vector2i) -> bool:
 	_blocks.erase(grid_pos)
 	_block_health.erase(grid_pos)
 	
+	# Clean up degradation data
+	_degradation_timers.erase(grid_pos)
+	_blocks_with_player.erase(grid_pos)
+	
 	block_removed.emit(grid_pos, block_id)
 	print("WorldGrid: Removed block '%s' from %s" % [block_id, grid_pos])
 	return true
@@ -188,6 +272,10 @@ func damage_block(grid_pos: Vector2i, damage: int) -> bool:
 ## Check if there's a block at the specified position
 func has_block(grid_pos: Vector2i) -> bool:
 	return _blocks.has(grid_pos)
+
+## Alias for has_block (for ProtoController compatibility)
+func has_block_at(grid_pos: Vector2i) -> bool:
+	return has_block(grid_pos)
 
 ## Get the block instance at the specified position
 func get_block(grid_pos: Vector2i) -> BlockInstance:

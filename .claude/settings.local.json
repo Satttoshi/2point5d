@@ -23,7 +23,9 @@
       "mcp__godot__get_debug_output",
       "mcp__godot__run_project",
       "mcp__godot__get_godot_version",
-      "Bash(\"/mnt/c/Program Files/Godot/Godot_v4.4.1-stable_win64.exe\" --editor project.godot)"
+      "Bash(\"/mnt/c/Program Files/Godot/Godot_v4.4.1-stable_win64.exe\" --editor project.godot)",
+      "Bash(\"/mnt/c/Program Files/Godot/Godot_v4.4.1-stable_console_win64.exe\" --verbose --debug-collisions --debug-paths --headless project.godot)",
+      "Bash(\"/mnt/c/Program Files/Godot/Godot_v4.4.1-stable_win64_console.exe\" --verbose --headless project.godot)"
     ],
     "deny": []
   },

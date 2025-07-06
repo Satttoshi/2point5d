@@ -272,4 +272,25 @@ func _create_basic_blocks():
 	
 	register_block(dirt_block)
 	
+	# Create sand block with degradation properties
+	var sand_block = DebugBlockResource.create_debug_block(
+		"sand",
+		"Sand Block",
+		Color(0.8, 0.7, 0.4, 1.0)  # Yellowish brown color
+	)
+	sand_block.block_description = "Unstable sand block that degrades when stepped on"
+	sand_block.durability = 30  # Lower durability for quick breaking
+	sand_block.break_time = 0.3
+	sand_block.category = "Natural"
+	sand_block.tags = ["sand", "natural", "unstable", "degradable"]
+	
+	# Configure degradation properties
+	sand_block.degradable = true
+	sand_block.degradation_amount = 10  # Lose 10 health per tick (30 health / 10 damage = 3 ticks to break)
+	sand_block.degradation_interval = 1.0  # Every 1 second
+	sand_block.degrades_under_player = true
+	sand_block.player_degradation_multiplier = 1.0  # Same rate when player is standing on it
+	
+	register_block(sand_block)
+	
 	print("BlockRegistry: Created %d debug block types" % _blocks.size())

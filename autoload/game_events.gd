@@ -19,6 +19,7 @@ signal block_break_cancelled(grid_pos: Vector2i)
 # Player interaction events
 signal player_target_changed(target_pos: Vector2i, has_target: bool)
 signal player_selected_block_changed(block_id: String, block_index: int)
+signal player_standing_on_block(grid_pos: Vector2i)
 
 # Inventory events
 signal item_added_to_inventory(block_id: String, quantity: int)
@@ -64,6 +65,10 @@ func notify_player_target_changed(target_pos: Vector2i, has_target: bool):
 func notify_player_selected_block_changed(block_id: String, block_index: int):
 	print("GameEvents: Player selected block changed to %s (index %d)" % [block_id, block_index])
 	player_selected_block_changed.emit(block_id, block_index)
+
+## Notify that player is standing on a block
+func notify_player_standing_on_block(grid_pos: Vector2i):
+	player_standing_on_block.emit(grid_pos)
 
 ## Request target indicator update
 func request_target_indicator_update(grid_pos: Vector2i, is_valid: bool):

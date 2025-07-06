@@ -70,10 +70,13 @@ var player_inventory: Inventory = null
 var current_targeted_block : Vector2i = Vector2i.ZERO
 var has_targeted_block : bool = false
 var selected_block_id : String = "grass"
-var available_blocks : Array[String] = ["grass", "stone", "dirt"]
+var available_blocks : Array[String] = ["grass", "stone", "dirt", "sand"]
 var current_block_index : int = 0
 ## Camera reference for mouse to world conversion
 var camera: Camera3D = null
+## Current block the player is standing on (for degradation system)
+var current_ground_block : Vector2i = Vector2i.ZERO
+var is_standing_on_block : bool = false
 
 ## IMPORTANT REFERENCES
 @onready var head: Node3D = $Head
@@ -162,6 +165,9 @@ func _physics_process(delta: float) -> void:
 	
 	# Update block targeting
 	update_block_targeting()
+	
+	# Update ground detection for degradable blocks
+	update_ground_detection()
 
 
 
@@ -346,6 +352,46 @@ func update_block_targeting():
 		
 		# Hide WorldGrid's target indicator
 		world_grid.hide_target_indicator()
+
+## Update ground detection to identify which block the player is standing on
+func update_ground_detection():
+	if world_grid == null or freeflying:
+		if is_standing_on_block:
+			is_standing_on_block = false
+			# Notify that player is no longer standing on any block
+			GameEvents.notify_player_standing_on_block(Vector2i(-9999, -9999))  # Invalid position to clear
+		return
+	
+	# Only check ground detection when player is on the floor
+	if not is_on_floor():
+		if is_standing_on_block:
+			is_standing_on_block = false
+			# Notify that player is no longer standing on any block
+			GameEvents.notify_player_standing_on_block(Vector2i(-9999, -9999))  # Invalid position to clear
+		return
+	
+	# Get player's position and check for the block directly below
+	var player_pos = global_position
+	var ground_check_pos = Vector3(player_pos.x, player_pos.y - 0.6, 0)  # Check slightly below player
+	var ground_grid_pos = world_grid.world_to_grid(ground_check_pos)
+	
+	# Check if there's a block at the ground position
+	if world_grid.has_block_at(ground_grid_pos):
+		var new_ground_block = ground_grid_pos
+		
+		# Check if we've moved to a different block
+		if new_ground_block != current_ground_block or not is_standing_on_block:
+			current_ground_block = new_ground_block
+			is_standing_on_block = true
+			
+			# Notify the world grid about player standing on this block
+			GameEvents.notify_player_standing_on_block(current_ground_block)
+		
+	else:
+		if is_standing_on_block:
+			is_standing_on_block = false
+			# Notify that player is no longer standing on any block
+			GameEvents.notify_player_standing_on_block(Vector2i(-9999, -9999))  # Invalid position to clear
 
 ## Request block placement at the currently targeted position
 func request_block_placement():
