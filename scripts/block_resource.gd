@@ -4,6 +4,12 @@ extends Resource
 ## Resource class that defines the properties and data for different block types
 ## This serves as the blueprint for all block types in the game (dirt, stone, wood, etc.)
 
+## Enum defining different item types and their placement behavior
+enum ItemType {
+	BLOCK,      ## Regular 3D blocks that occupy full voxel space
+	WALL_ITEM   ## Flat items placed on voxel faces (paintings, decorations)
+}
+
 @export var block_id: String = ""
 @export var block_name: String = ""
 @export var block_description: String = ""
@@ -17,6 +23,8 @@ extends Resource
 @export var material_override: Material
 
 @export_group("Gameplay Properties")
+## What type of item this is (affects placement behavior)
+@export var item_type: ItemType = ItemType.BLOCK
 ## How much health this block has before it breaks
 @export var durability: int = 100
 ## How long it takes to break this block (in seconds)
@@ -27,6 +35,12 @@ extends Resource
 @export var breakable: bool = true
 ## Does this block have collision?
 @export var has_collision: bool = true
+
+@export_group("Wall Item Properties")
+## Z-axis offset for wall item placement (negative values place behind blocks)
+@export var wall_placement_offset: float = -0.5
+## Does this item block placement of other items in front of it?
+@export var blocks_placement: bool = true
 
 @export_group("Degradation Properties")
 ## Does this block degrade over time?
@@ -106,6 +120,11 @@ func get_formatted_description() -> String:
 	desc += "\n\nDurability: %d" % durability
 	desc += "\nBreak Time: %.1fs" % break_time
 	desc += "\nCategory: %s" % category
+	
+	if item_type == ItemType.WALL_ITEM:
+		desc += "\nType: Wall Item"
+		if not blocks_placement:
+			desc += "\nAllows placement in front"
 	
 	if degradable:
 		desc += "\n\nDegradation: %d damage every %.1fs" % [degradation_amount, degradation_interval]

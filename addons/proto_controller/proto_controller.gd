@@ -70,7 +70,7 @@ var player_inventory: Inventory = null
 var current_targeted_block : Vector2i = Vector2i.ZERO
 var has_targeted_block : bool = false
 var selected_block_id : String = "grass"
-var available_blocks : Array[String] = ["grass", "stone", "dirt", "sand"]
+var available_blocks : Array[String] = ["grass", "stone", "dirt", "sand", "brick_wall"]
 var current_block_index : int = 0
 ## Camera reference for mouse to world conversion
 var camera: Camera3D = null
@@ -345,8 +345,8 @@ func update_block_targeting():
 		current_targeted_block = grid_target
 		has_targeted_block = true
 		
-		# Update WorldGrid's target indicator
-		world_grid.update_target_indicator(grid_target, true)
+		# Update WorldGrid's target indicator with selected block info
+		world_grid.update_target_indicator(grid_target, true, selected_block_id)
 	else:
 		has_targeted_block = false
 		

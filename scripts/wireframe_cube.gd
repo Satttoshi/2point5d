@@ -4,10 +4,17 @@ extends MeshInstance3D
 ## Custom wireframe cube mesh generator for clean edge visualization
 ## Creates proper line-based wireframe with configurable thickness and color
 
+## Display mode for different types of indicators
+enum DisplayMode {
+	CUBE,        ## Full wireframe cube for blocks
+	WALL_BACK    ## Flat rectangle at back face for wall items
+}
+
 @export var cube_size: Vector3 = Vector3.ONE
 @export var line_thickness: float = 0.02
 @export var wireframe_color: Color = Color.YELLOW
 @export var alpha: float = 0.7
+@export var display_mode: DisplayMode = DisplayMode.CUBE
 
 var wireframe_material: StandardMaterial3D
 
@@ -21,10 +28,24 @@ func create_wireframe_mesh():
 	var arrays = []
 	arrays.resize(Mesh.ARRAY_MAX)
 	
-	# Define cube vertices
-	var half_size = cube_size * 0.5
 	var vertices = PackedVector3Array()
 	var indices = PackedInt32Array()
+	
+	if display_mode == DisplayMode.CUBE:
+		_create_cube_wireframe(vertices, indices)
+	elif display_mode == DisplayMode.WALL_BACK:
+		_create_wall_back_wireframe(vertices, indices)
+	
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_INDEX] = indices
+	
+	array_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	mesh = array_mesh
+
+## Generate full cube wireframe
+func _create_cube_wireframe(vertices: PackedVector3Array, indices: PackedInt32Array):
+	# Define cube vertices
+	var half_size = cube_size * 0.5
 	
 	# Cube corner vertices
 	var corners = [
@@ -53,12 +74,39 @@ func create_wireframe_mesh():
 		var start_pos = corners[edge[0]]
 		var end_pos = corners[edge[1]]
 		_add_line_tube(vertices, indices, start_pos, end_pos)
+
+## Generate wall back face wireframe (rectangle at back of voxel)
+func _create_wall_back_wireframe(vertices: PackedVector3Array, indices: PackedInt32Array):
+	# Define back face rectangle vertices positioned just behind voxel center
+	var half_size = cube_size * 0.5
 	
-	arrays[Mesh.ARRAY_VERTEX] = vertices
-	arrays[Mesh.ARRAY_INDEX] = indices
+	# Back face corners positioned just 1px behind the voxel center (Z = -0.01)
+	var wall_z = -0.5  # Very thin offset, like 1px
+	var corners = [
+		Vector3(-half_size.x, -half_size.y, wall_z), # 0: bottom-left-back
+		Vector3( half_size.x, -half_size.y, wall_z), # 1: bottom-right-back
+		Vector3( half_size.x,  half_size.y, wall_z), # 2: top-right-back
+		Vector3(-half_size.x,  half_size.y, wall_z)  # 3: top-left-back
+	]
 	
-	array_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	mesh = array_mesh
+	# Define the 4 edges of the back face rectangle
+	var edges = [
+		[0, 1], # bottom edge
+		[1, 2], # right edge
+		[2, 3], # top edge
+		[3, 0]  # left edge
+	]
+	
+	# Create tube geometry for each edge
+	for edge in edges:
+		var start_pos = corners[edge[0]]
+		var end_pos = corners[edge[1]]
+		_add_line_tube(vertices, indices, start_pos, end_pos)
+
+## Set the display mode and regenerate mesh
+func set_display_mode(mode: DisplayMode):
+	display_mode = mode
+	create_wireframe_mesh()
 
 ## Add tube geometry between two points to create visible line
 func _add_line_tube(vertices: PackedVector3Array, indices: PackedInt32Array, start: Vector3, end: Vector3):

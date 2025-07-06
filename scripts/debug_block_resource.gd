@@ -33,11 +33,22 @@ func _generate_procedural_mesh():
 	var mesh_instance = MeshInstance3D.new()
 	mesh_instance.name = "DebugBlock_" + block_id
 	
-	# Create BoxMesh with material
-	var box_mesh = BoxMesh.new()
-	box_mesh.size = Vector3.ONE
-	mesh_instance.mesh = box_mesh
-	mesh_instance.material_override = _create_cube_material()
+	# Create appropriate mesh based on item type
+	if item_type == ItemType.WALL_ITEM:
+		# Create flat 2D quad for wallpaper texture - positioned at back face
+		var quad_mesh = QuadMesh.new()
+		quad_mesh.size = Vector2.ONE  # 1x1 quad to match voxel face
+		mesh_instance.mesh = quad_mesh
+		mesh_instance.material_override = _create_wallpaper_material()
+		
+		# No internal offset - positioning will be handled in WorldGrid
+		# Quad faces forward by default, perfect for back wall
+	else:
+		# Create BoxMesh for regular blocks
+		var box_mesh = BoxMesh.new()
+		box_mesh.size = Vector3.ONE
+		mesh_instance.mesh = box_mesh
+		mesh_instance.material_override = _create_cube_material()
 	
 	
 	# Pack the mesh instance directly as the root
@@ -144,6 +155,30 @@ func _create_cube_material() -> StandardMaterial3D:
 	
 	return material
 
+## Create material for wallpaper texture (completely flat 2D appearance)
+func _create_wallpaper_material() -> StandardMaterial3D:
+	var material = StandardMaterial3D.new()
+	
+	# Ensure we have a valid color, default to white if not set
+	var final_color = block_color if block_color != Color.TRANSPARENT else Color.WHITE
+	
+	# Create completely flat 2D appearance like wallpaper
+	material.flags_unshaded = true  # No 3D lighting
+	material.albedo_color = final_color
+	material.metallic = 0.0
+	material.roughness = 1.0
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.cull_mode = BaseMaterial3D.CULL_BACK  # Only show front face
+	material.flags_transparent = false
+	material.billboard_mode = BaseMaterial3D.BILLBOARD_DISABLED  # Stay flat
+	material.flags_do_not_use_vertex_color = true
+	
+	# Make it appear completely flat like a painted texture
+	material.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_ALWAYS
+	material.no_depth_test = false
+	
+	return material
+
 ## Create collision shape for the cube
 func _create_cube_collision() -> BoxShape3D:
 	var box_shape = BoxShape3D.new()
@@ -177,6 +212,10 @@ func set_block_color(color: Color):
 	block_color = color
 	if _cached_mesh_scene:
 		_generate_procedural_mesh()
+
+## Regenerate mesh (call this after changing item_type)
+func regenerate_mesh():
+	_generate_procedural_mesh()
 
 ## Get material for specific damage stage (for breaking animations)
 func get_damage_stage_material(damage_stage: int) -> StandardMaterial3D:

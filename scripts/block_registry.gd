@@ -293,4 +293,27 @@ func _create_basic_blocks():
 	
 	register_block(sand_block)
 	
+	# Create brick wall item
+	var brick_wall = DebugBlockResource.create_debug_block(
+		"brick_wall",
+		"Brick Wall",
+		Color(0.7, 0.4, 0.3, 1.0)  # Brick red-brown color
+	)
+	brick_wall.block_description = "Decorative brick wall that can be placed behind blocks"
+	brick_wall.durability = 80
+	brick_wall.break_time = 1.5
+	brick_wall.category = "Decorative"
+	brick_wall.tags = ["wall", "decorative", "brick"]
+	
+	# Configure as wall item
+	brick_wall.item_type = BlockResource.ItemType.WALL_ITEM
+	brick_wall.wall_placement_offset = -0.5  # Half a block back (back face of voxel)
+	brick_wall.blocks_placement = false  # Allow blocks to be placed in front
+	brick_wall.has_collision = false  # No collision for decorative wall items
+	
+	# Regenerate mesh now that item_type is set to WALL_ITEM
+	brick_wall.regenerate_mesh()
+	
+	register_block(brick_wall)
+	
 	print("BlockRegistry: Created %d debug block types" % _blocks.size())

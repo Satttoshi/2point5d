@@ -36,6 +36,12 @@ var _blocks_with_player: Dictionary = {}
 var _degradation_process_timer: float = 0.0
 ## How often to process degradation checks (in seconds)
 var _degradation_check_interval: float = 0.1
+## Dictionary storing wall instances [Vector2i position -> WallInstance]
+var _walls: Dictionary = {}
+## Root node for all wall mesh instances
+var _wall_container: Node3D
+## Dictionary caching wall mesh instances [Vector2i position -> Node3D]
+var _wall_mesh_instances: Dictionary = {}
 
 ## Internal class to represent a block instance in the world
 class BlockInstance:
@@ -52,6 +58,18 @@ class BlockInstance:
 		block_id = id
 		block_resource = resource
 		current_health = resource.durability if resource else 100
+
+## Internal class to represent a wall instance in the world (separate from blocks)
+class WallInstance:
+	var position: Vector2i
+	var wall_id: String
+	var wall_resource: BlockResource
+	var mesh_instance: Node3D
+	
+	func _init(pos: Vector2i, id: String, resource: BlockResource):
+		position = pos
+		wall_id = id
+		wall_resource = resource
 
 func _ready():
 	print("WorldGrid: Initializing world grid system...")
@@ -143,11 +161,15 @@ func _on_player_standing_on_block(grid_pos: Vector2i):
 	else:
 		print("WorldGrid: Player no longer standing on any block")
 
-## Setup the container node for all block instances
+## Setup the container nodes for blocks and walls
 func _setup_container():
 	_block_container = Node3D.new()
 	_block_container.name = "BlockContainer"
 	add_child(_block_container)
+	
+	_wall_container = Node3D.new()
+	_wall_container.name = "WallContainer"
+	add_child(_wall_container)
 
 ## Setup the target indicator for block placement/removal
 func _setup_target_indicator():
@@ -169,26 +191,30 @@ func world_to_grid(world_pos: Vector3) -> Vector2i:
 	var grid_y = int(round(world_pos.y / cell_size))
 	return Vector2i(grid_x, grid_y)
 
-## Convert grid coordinates to world position
+## Convert grid coordinates to world position (for regular blocks)
 func grid_to_world(grid_pos: Vector2i) -> Vector3:
 	var world_x = grid_pos.x * cell_size
 	var world_y = grid_pos.y * cell_size
 	# Z is always 0 for 2.5D constraint
 	return Vector3(world_x, world_y, 0.0)
 
-## Place a block at the specified grid position
+## Convert grid coordinates to world position for a specific item type
+func grid_to_world_for_item(grid_pos: Vector2i, block_resource: BlockResource) -> Vector3:
+	var world_x = grid_pos.x * cell_size
+	var world_y = grid_pos.y * cell_size
+	var world_z = 0.0  # All items use the same grid position
+	
+	# Wall items use the same world position as blocks - the visual offset is handled in the mesh positioning
+	return Vector3(world_x, world_y, world_z)
+
+## Place a block or wall at the specified grid position
 func place_block(grid_pos: Vector2i, block_id: String) -> bool:
 	# Validate position
 	if not _is_valid_position(grid_pos):
 		push_warning("WorldGrid: Invalid position for block placement: %s" % grid_pos)
 		return false
 	
-	# Check if position is already occupied
-	if has_block(grid_pos):
-		push_warning("WorldGrid: Position already occupied: %s" % grid_pos)
-		return false
-	
-	# Get block resource
+	# Get block resource to check type before validation
 	var block_resource = BlockRegistry.get_block(block_id)
 	if block_resource == null:
 		push_error("WorldGrid: Block type not found: %s" % block_id)
@@ -196,6 +222,15 @@ func place_block(grid_pos: Vector2i, block_id: String) -> bool:
 	
 	if not block_resource.placeable:
 		push_warning("WorldGrid: Block type not placeable: %s" % block_id)
+		return false
+	
+	# Route wall items to separate wall system (before checking for existing blocks)
+	if block_resource.item_type == BlockResource.ItemType.WALL_ITEM:
+		return _place_wall(grid_pos, block_id, block_resource)
+	
+	# Check if position is already occupied for regular blocks only
+	if has_block(grid_pos):
+		push_warning("WorldGrid: Position already occupied by block: %s" % grid_pos)
 		return false
 	
 	# Create block instance
@@ -219,11 +254,20 @@ func place_block(grid_pos: Vector2i, block_id: String) -> bool:
 	print("WorldGrid: Placed block '%s' at %s" % [block_id, grid_pos])
 	return true
 
-## Remove a block at the specified grid position
+## Remove a block or wall at the specified grid position
 func remove_block(grid_pos: Vector2i) -> bool:
-	if not has_block(grid_pos):
-		push_warning("WorldGrid: No block to remove at position: %s" % grid_pos)
+	# Try to remove a block first
+	if has_block(grid_pos):
+		return _remove_block_internal(grid_pos)
+	# If no block, try to remove a wall
+	elif has_wall(grid_pos):
+		return _remove_wall(grid_pos)
+	else:
+		push_warning("WorldGrid: Nothing to remove at position: %s" % grid_pos)
 		return false
+
+## Internal function to remove a block (renamed from remove_block)
+func _remove_block_internal(grid_pos: Vector2i) -> bool:
 	
 	var block_instance = _blocks[grid_pos] as BlockInstance
 	var block_id = block_instance.block_id
@@ -337,17 +381,34 @@ func hide_target_indicator():
 	if _target_indicator:
 		_target_indicator.visible = false
 
-## Update target indicator position and visibility based on validity
-func update_target_indicator(grid_pos: Vector2i, is_valid: bool):
+## Update target indicator position and visibility based on validity and item type
+func update_target_indicator(grid_pos: Vector2i, is_valid: bool, selected_block_id: String = ""):
 	if _target_indicator:
 		var world_pos = grid_to_world(grid_pos)
+		
+		# Check if selected item is a wall item to change indicator display
+		var is_wall_item = false
+		if not selected_block_id.is_empty():
+			var selected_resource = BlockRegistry.get_block(selected_block_id)
+			if selected_resource and selected_resource.item_type == BlockResource.ItemType.WALL_ITEM:
+				is_wall_item = true
+				# Wall items use the same position as blocks - no Z offset
+		
+		# Set appropriate display mode
+		if is_wall_item:
+			_target_indicator.set_display_mode(WireframeCube.DisplayMode.WALL_BACK)
+		else:
+			_target_indicator.set_display_mode(WireframeCube.DisplayMode.CUBE)
+		
 		_target_indicator.global_position = world_pos
 		_target_indicator.visible = is_valid
 		
-		# Change color based on validity (green for valid placement, red for invalid)
+		# Change color based on validity and what exists at the position
 		if is_valid:
 			if has_block(grid_pos):
 				_target_indicator.set_color(Color.RED)  # Block exists, can remove
+			elif has_wall(grid_pos) and is_wall_item:
+				_target_indicator.set_color(Color.ORANGE)  # Wall exists, can replace
 			else:
 				_target_indicator.set_color(Color.GREEN)  # Empty space, can place
 		else:
@@ -378,7 +439,7 @@ func _create_block_visual(block_instance: BlockInstance) -> bool:
 		return false
 	
 	
-	# Position the mesh instance
+	# Position the mesh instance at grid position
 	var world_pos = grid_to_world(block_instance.position)
 	mesh_instance.position = world_pos
 	
@@ -400,18 +461,19 @@ func _remove_block_visual(grid_pos: Vector2i):
 			mesh_instance.queue_free()
 		_mesh_instances.erase(grid_pos)
 
-## Create collision for a block
+## Create collision for a block (only called for regular blocks, not walls)
 func _create_block_collision(block_instance: BlockInstance):
-	# For now, we'll use a simple box collision
-	# This can be enhanced later with custom collision shapes
 	var static_body = StaticBody3D.new()
 	var collision_shape = CollisionShape3D.new()
 	var box_shape = BoxShape3D.new()
 	
+	# Regular blocks have full collision
 	box_shape.size = Vector3(cell_size, cell_size, cell_size)
+	
 	collision_shape.shape = box_shape
 	static_body.add_child(collision_shape)
 	
+	# Position collision at grid position (same for all items)
 	var world_pos = grid_to_world(block_instance.position)
 	static_body.position = world_pos
 	
@@ -448,7 +510,12 @@ func _on_block_placement_requested(grid_pos: Vector2i, block_id: String):
 		print("WorldGrid: Invalid position for placement: %s" % grid_pos)
 		return
 	
-	if has_block(grid_pos):
+	# Check if this is a wall item - if so, allow placement even if block exists
+	var block_resource = BlockRegistry.get_block(block_id)
+	if block_resource != null and block_resource.item_type == BlockResource.ItemType.WALL_ITEM:
+		# Wall items can be placed regardless of existing blocks
+		pass
+	elif has_block(grid_pos):
 		print("WorldGrid: Position already occupied: %s" % grid_pos)
 		return
 	
@@ -462,17 +529,14 @@ func _on_block_placement_requested(grid_pos: Vector2i, block_id: String):
 func _on_block_removal_requested(grid_pos: Vector2i):
 	print("WorldGrid: Received block removal request at %s" % grid_pos)
 	
-	if not has_block(grid_pos):
-		print("WorldGrid: No block to remove at %s" % grid_pos)
-		return
-	
-	var block_id = get_block_id(grid_pos)
-	
-	# Attempt to remove the block
+	# Try to remove block or wall at the position
 	if remove_block(grid_pos):
-		GameEvents.notify_block_removed(grid_pos, block_id)
+		# The remove_block function handles both blocks and walls
+		var block_id = get_block_id(grid_pos) if has_block(grid_pos) else ""
+		if not block_id.is_empty():
+			GameEvents.notify_block_removed(grid_pos, block_id)
 	else:
-		print("WorldGrid: Failed to remove block at %s" % grid_pos)
+		print("WorldGrid: Nothing to remove at %s" % grid_pos)
 
 ## Handle target indicator update requests from events
 func _on_target_indicator_update_requested(grid_pos: Vector2i, is_valid: bool):
@@ -487,3 +551,87 @@ func _draw_debug_grid():
 	# This would be implemented for development debugging
 	# Could show grid lines, block boundaries, etc.
 	pass
+
+## Place a wall at the specified grid position (separate from block system)
+func _place_wall(grid_pos: Vector2i, wall_id: String, wall_resource: BlockResource) -> bool:
+	# Walls can always be placed - they don't interfere with blocks
+	# If a wall already exists at this position, replace it
+	if _walls.has(grid_pos):
+		_remove_wall(grid_pos)
+	
+	# Create wall instance
+	var wall_instance = WallInstance.new(grid_pos, wall_id, wall_resource)
+	_walls[grid_pos] = wall_instance
+	
+	# Create visual representation for wall
+	if not _create_wall_visual(wall_instance):
+		_walls.erase(grid_pos)
+		push_error("WorldGrid: Failed to create visual for wall: %s" % wall_id)
+		return false
+	
+	print("WorldGrid: Placed wall '%s' at %s" % [wall_id, grid_pos])
+	return true
+
+## Create visual representation for a wall
+func _create_wall_visual(wall_instance: WallInstance) -> bool:
+	var wall_resource = wall_instance.wall_resource
+	
+	if wall_resource.mesh_scene == null:
+		push_error("WorldGrid: No mesh scene defined for wall: %s" % wall_instance.wall_id)
+		return false
+	
+	# Instance the mesh scene
+	var mesh_instance = wall_resource.mesh_scene.instantiate()
+	if mesh_instance == null:
+		push_error("WorldGrid: Failed to instantiate mesh scene for wall: %s" % wall_instance.wall_id)
+		return false
+	
+	# Position the wall at grid position, then move to back face
+	var world_pos = grid_to_world(wall_instance.position)
+	# Move wall to back face of voxel (half a block back)
+	world_pos.z += wall_resource.wall_placement_offset
+	mesh_instance.position = world_pos
+	
+	# Add to wall container (separate from blocks)
+	_wall_container.add_child(mesh_instance)
+	
+	# Store references
+	_wall_mesh_instances[wall_instance.position] = mesh_instance
+	wall_instance.mesh_instance = mesh_instance
+	
+	return true
+
+## Remove a wall at the specified grid position
+func _remove_wall(grid_pos: Vector2i) -> bool:
+	if not _walls.has(grid_pos):
+		return false
+	
+	var wall_instance = _walls[grid_pos] as WallInstance
+	var wall_id = wall_instance.wall_id
+	
+	# Remove visual representation
+	if _wall_mesh_instances.has(grid_pos):
+		var mesh_instance = _wall_mesh_instances[grid_pos]
+		if mesh_instance:
+			mesh_instance.queue_free()
+		_wall_mesh_instances.erase(grid_pos)
+	
+	# Clean up data
+	_walls.erase(grid_pos)
+	
+	print("WorldGrid: Removed wall '%s' from %s" % [wall_id, grid_pos])
+	return true
+
+## Check if there's a wall at the specified position
+func has_wall(grid_pos: Vector2i) -> bool:
+	return _walls.has(grid_pos)
+
+## Get the wall instance at the specified position
+func get_wall(grid_pos: Vector2i) -> WallInstance:
+	return _walls.get(grid_pos, null)
+
+## Clear all walls from the world
+func clear_walls():
+	for grid_pos in _walls.keys():
+		_remove_wall(grid_pos)
+	print("WorldGrid: All walls cleared")
